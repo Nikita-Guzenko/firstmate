@@ -526,6 +526,7 @@ test_opencode_plugin_forces_followup() {
 }
 
 test_opencode_plugin_anchors_guard_to_worktree() {
+  fm_skip_without node "OpenCode plugin must run the guard from worktree even when directory is elsewhere" || return 0
   local plugin parent worktree_dir wrong_dir out status
   plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
   [ -f "$plugin" ] || fail "tracked OpenCode primary plugin is missing"

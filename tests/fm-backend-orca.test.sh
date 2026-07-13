@@ -6,6 +6,11 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# The Orca backend (bin/backends/orca.sh) parses its JSON responses with `node`,
+# so these fake-CLI tests can only exercise it where a node interpreter exists.
+# Skip the whole file when node is absent, mirroring the herdr/cmux smoke skips.
+command -v node >/dev/null 2>&1 || { echo "skip: node not found"; exit 0; }
+
 TMP_ROOT=$(fm_test_tmproot fm-backend-orca-tests)
 
 make_orca_fakebin() {  # <dir> -> echoes fakebin dir
@@ -673,7 +678,11 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" claude --backend orca 2>&1 )
   status=$?
   [ "$status" -ne 0 ] || fail "Orca spawn should fail when metadata cannot be written"
-  assert_contains "$out" "File exists" "spawn should fail at the state directory creation point"
+  # GNU coreutils reports "File exists"; uutils-coreutils reports "Already exists".
+  case "$out" in
+    *"File exists"*|*"Already exists"*) ;;
+    *) fail "spawn should fail at the state directory creation point (got: $out)" ;;
+  esac
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''close'$'\x1f''--terminal'$'\x1f''term-meta-fail'$'\x1f''--json' \
     "Orca spawn should close the recorded terminal when a later abort occurs"
   assert_contains "$(cat "$LOG")" $'orca\x1f''worktree'$'\x1f''rm'$'\x1f''--worktree'$'\x1f''id:wt-meta-fail'$'\x1f''--force'$'\x1f''--json' \

@@ -427,7 +427,10 @@ test_watch_restart_reports_healthy_peer_without_attaching() {
   state="$dir/state"
   fakebin="$dir/fakebin"
   out="$dir/restart.out"
-  node -e 'process.on("SIGTERM", () => {}); setTimeout(() => {}, 300000)' &
+  # A long-lived process that ignores SIGTERM, so a restart that wrongly tried to
+  # signal this "healthy peer" would leave it running. bash with an ignored TERM
+  # trap gives that behavior without depending on a node interpreter being present.
+  bash -c 'trap "" TERM; sleep 300' &
   peer=$!
   identity=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$LIB" "$peer") || fail "could not identify peer pid"
   mkdir "$state/.watch.lock"
