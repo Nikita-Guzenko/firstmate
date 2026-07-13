@@ -191,7 +191,9 @@ case "$MODE" in
 # Definition of done
 This project ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
+When it is implemented and committed, push your branch and open a PR with \`gh-axi\` **against your \`origin\` remote's own repository**, not its upstream parent.
+Target it explicitly with \`--repo <owner/repo>\` derived from \`origin\`, e.g. \`gh-axi pr create --repo "\$(gh repo view "\$(git remote get-url origin)" --json nameWithOwner -q .nameWithOwner)" ...\`, because when \`origin\` is a fork \`gh\` otherwise defaults the PR base to the parent repo.
+Then append \`done: PR {url}\` to the status file and stop.
 Do NOT run /no-mistakes. The captain reviews and merges the PR; firstmate relays it.
 EOF
 )

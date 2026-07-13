@@ -76,6 +76,26 @@ test_no_mistakes_dod_wording() {
   pass "fm-brief.sh: no-mistakes DOD wording avoids the apostrophe regression"
 }
 
+# The direct-PR DOD must direct the crew to open the PR against origin's own
+# repo (derived generically), so a fork ship does not default the PR base to
+# the fork's upstream parent.
+test_direct_pr_dod_targets_origin() {
+  local home id brief
+  home="$TMP_ROOT/directpr-origin-home"
+  write_registry "$home"
+  id="brief-directpr-origin-d1"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "direct-PR brief was not scaffolded"
+  assert_grep "against your \`origin\` remote's own repository" "$brief" \
+    "direct-PR DOD lost the origin-targeting instruction"
+  assert_grep "--repo" "$brief" \
+    "direct-PR DOD lost the explicit --repo derivation"
+  assert_no_grep "Nikita-Guzenko" "$brief" \
+    "direct-PR DOD hardcoded a specific fork name instead of deriving from origin"
+  pass "fm-brief.sh: direct-PR DOD targets origin's own repo"
+}
+
 test_ship_project_memory_wording() {
   local home id brief
   home="$TMP_ROOT/project-memory-home"
@@ -96,4 +116,5 @@ test_ship_project_memory_wording() {
 test_script_parses
 test_ship_modes_generate_clean_briefs
 test_no_mistakes_dod_wording
+test_direct_pr_dod_targets_origin
 test_ship_project_memory_wording
