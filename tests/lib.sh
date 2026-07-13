@@ -41,6 +41,16 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
+# fm_skip_without <cmd> <label>: when <cmd> is unavailable on PATH, emit an
+# ok-marked skip line for <label> and return 1 so the caller can `return`.
+# Mirrors the herdr/cmux/zsh convention of skipping a test whose external
+# dependency is absent rather than failing on a hard 127.
+fm_skip_without() {
+  command -v "$1" >/dev/null 2>&1 && return 0
+  printf 'ok - %s (skipped: %s not found)\n' "$2" "$1"
+  return 1
+}
+
 # --- self-cleaning temp root ------------------------------------------------
 #
 # fm_test_tmproot <prefix> echoes a fresh temp dir and registers it for removal

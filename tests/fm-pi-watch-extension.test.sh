@@ -81,6 +81,7 @@ test_spawn_template_mentions_pi_watch_placeholder() {
 }
 
 test_pi_extension_reports_external_healthy_watcher() {
+  fm_skip_without node "Pi extension reports external healthy watcher output" || return 0
   local repo home out status
   repo="$TMP_ROOT/pi-external-healthy-root"
   home="$TMP_ROOT/pi-external-healthy-home"
@@ -159,6 +160,7 @@ test_opencode_primary_watch_plugin_static_wiring() {
 }
 
 test_opencode_primary_watch_plugin_uses_effective_state_home() {
+  fm_skip_without node "OpenCode watcher plugin uses the effective FM_HOME state" || return 0
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-effective-state-root"
@@ -209,6 +211,7 @@ EOF
 }
 
 test_opencode_primary_watch_plugin_sources_effective_config() {
+  fm_skip_without node "OpenCode watcher plugin sources the effective config" || return 0
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-effective-config-root"
@@ -258,6 +261,7 @@ EOF
 }
 
 test_opencode_primary_watch_plugin_requires_session_lock() {
+  fm_skip_without node "OpenCode watcher plugin requires session lock ownership" || return 0
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-lock-root"
@@ -310,6 +314,7 @@ EOF
 }
 
 test_opencode_watch_arm_coordinator_respects_primary_scope() {
+  fm_skip_without node "OpenCode watcher coordinator respects primary scope" || return 0
   local plugin base repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   base="$TMP_ROOT/opencode-coordinator-base"
@@ -357,6 +362,7 @@ EOF
 }
 
 test_opencode_primary_watch_plugin_rearms_after_wake() {
+  fm_skip_without node "OpenCode watcher plugin rearms after a watcher wake" || return 0
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-rearm-root"
@@ -413,6 +419,7 @@ EOF
 }
 
 test_opencode_watch_arm_coordinates_with_turnend_guard() {
+  fm_skip_without node "OpenCode watcher plugin coordinates with the turn-end guard" || return 0
   local arm_plugin guard_plugin repo home log guard_log out status
   arm_plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   guard_plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
@@ -486,6 +493,7 @@ EOF
 }
 
 test_opencode_healthy_arm_output_does_not_suppress_guard() {
+  fm_skip_without node "OpenCode healthy arm output does not suppress the turn-end guard" || return 0
   local arm_plugin guard_plugin repo home log guard_log out status
   arm_plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   guard_plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
