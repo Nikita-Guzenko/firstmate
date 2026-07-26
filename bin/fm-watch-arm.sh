@@ -69,6 +69,15 @@ BEAT="$STATE/.last-watcher-beat"
 GRACE=${FM_GUARD_GRACE:-300}
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
 CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-10}
+# Held only across that confirmation window so a concurrent alarm (the Stop-hook
+# guard, bin/fm-turnend-guard.sh) can tell "an arm is in progress" apart from
+# "supervision lapsed"; see fm_arm_in_flight in bin/fm-wake-lib.sh.
+ARM_INFLIGHT="$STATE/$FM_ARM_INFLIGHT_NAME"
+
+clear_arm_inflight() {
+  rm -f "$ARM_INFLIGHT" 2>/dev/null || true
+}
+
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
 CYCLE_LOG="$STATE/.watch-cycle-exits.log"
@@ -364,6 +373,7 @@ fi
 child=
 child_out=
 cleanup_child() {
+  clear_arm_inflight
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     kill -TERM "$child" 2>/dev/null || true
   fi
@@ -393,6 +403,7 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
   echo "watcher: FAILED - no live watcher with a fresh beacon"
   exit 1
 }
+: > "$ARM_INFLIGHT" 2>/dev/null || true
 "$WATCH" >"$child_out" &
 child=$!
 cycle_begin "$child" started
@@ -400,6 +411,7 @@ child_done=0
 
 owned_child_finished() {
   local rc=$1 signal reason_type status
+  clear_arm_inflight
   signal=$(cycle_signal_name "$rc")
   if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
     reason_type=$(watch_output_reason_type "$child_out")
@@ -459,6 +471,7 @@ while :; do
     if [ "$HEALTHY_PID" = "$child" ]; then
       cycle_refresh_lock_before
       cycle_mark_predecessor_successor "started:$child"
+      clear_arm_inflight
       echo "watcher: started pid=$child (beacon fresh)"
       wait "$child"
       rc=$?

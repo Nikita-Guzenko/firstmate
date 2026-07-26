@@ -70,6 +70,25 @@ fm_path_age() {
   echo $(( $(date +%s) - m ))
 }
 
+# Marker bin/fm-watch-arm.sh holds while it has forked a watcher but has not yet
+# confirmed that watcher owns the lock. That confirmation window is real work,
+# not a lapse: the arm polls for up to FM_ARM_CONFIRM_TIMEOUT seconds, and until
+# the fresh watcher acquires the lock a strict lock-identity check
+# (fm_watcher_healthy) correctly reports no live watcher. A caller that would
+# raise a "supervision is off" alarm must consult this first, or it reports an
+# in-progress arm as a lapse - the false alarm this exists to end.
+# The arm removes the marker on every terminal outcome, and the TTL bounds one
+# orphaned by a killed arm, so a genuinely absent watcher still alarms.
+FM_ARM_INFLIGHT_NAME=.watch-arm-inflight
+
+fm_arm_in_flight() {
+  local state=$1 ttl=${2:-$(( ${FM_ARM_CONFIRM_TIMEOUT:-10} + 5 ))} arm_marker arm_age
+  arm_marker="$state/$FM_ARM_INFLIGHT_NAME"
+  [ -e "$arm_marker" ] || return 1
+  arm_age=$(fm_path_age "$arm_marker")
+  [ "$arm_age" -le "$ttl" ]
+}
+
 fm_watcher_lock_matches_pid() {
   local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity
   lockdir="$state/.watch.lock"

@@ -32,6 +32,14 @@ Otherwise it calls `fm_watcher_healthy <state-dir> <watch-path> [grace-seconds] 
 A stale beacon blocks even when a watcher pid is live.
 A fresh leftover beacon blocks when the lock is missing, dead, or identity-mismatched.
 
+`bin/fm-watch-arm.sh` forks its watcher and only then polls, for up to `FM_ARM_CONFIRM_TIMEOUT` seconds (default 10), for that child to acquire the lock and beat.
+Inside that confirmation window the lock is legitimately unowned, so `fm_watcher_healthy` correctly reports no live watcher even though supervision is being armed correctly.
+Because AGENTS.md section 8 requires arming as the last act of a turn, the turn-end hook can fire inside that window, so the guard must distinguish an arm in progress from a genuine lapse.
+`bin/fm-watch-arm.sh` writes `state/.watch-arm-inflight` immediately before forking the watcher and removes it on every terminal outcome, including the signal-trap cleanup path.
+`fm_arm_in_flight <state-dir> [ttl]` in `bin/fm-wake-lib.sh` owns the read side, and the guard consults it only after `fm_watcher_healthy` has already failed, so it never weakens the identity-matched check.
+The default TTL of `FM_ARM_CONFIRM_TIMEOUT` plus 5 seconds bounds a marker orphaned by a killed arm, so a genuinely absent watcher still blocks rather than trading a false alarm for a missed one.
+`bin/fm-guard.sh` needs no equivalent change because it is beacon-based, so its grace window already absorbs this window.
+
 `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
 `FM_GUARD_GRACE` controls beacon freshness and defaults to 300 seconds.
 If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot safely read loop-guard fields.
@@ -83,7 +91,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Regression coverage
 
-`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the cooperative `--claude` claim wait, epoch allow, re-block budget, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, and Grok resume permission and recursion safety.
+`tests/fm-turnend-guard.test.sh` covers the predicate, the arm-confirmation in-flight marker in both directions, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the cooperative `--claude` claim wait, epoch allow, re-block budget, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, and Grok resume permission and recursion safety.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership.
 `FM_PI_LIVE_E2E=1 tests/fm-pi-primary-live-e2e.test.sh` is the opt-in isolated Pi path.

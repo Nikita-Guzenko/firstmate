@@ -139,6 +139,15 @@ if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   budget_reset
   exit 0
 fi
+# An arm that has forked its watcher but not yet confirmed the lock is doing
+# exactly what this guard asks for, so blocking the turn on it is a false alarm.
+# Observed live 2026-07-25: four consecutive turns were blocked this way, each
+# time with a healthy watcher moments later, because the hook fired inside that
+# confirmation window. A stale marker times out, so a real lapse still alarms.
+if fm_arm_in_flight "$STATE"; then
+  budget_reset
+  exit 0
+fi
 
 block_stop() {
   local afk x_mode reason rule
