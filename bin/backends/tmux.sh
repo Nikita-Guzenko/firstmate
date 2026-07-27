@@ -77,7 +77,7 @@ fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs>
     echo "error: window $ses:$wname already exists" >&2
     return 1
   fi
-  tmux new-window -d -t "$ses" -n "$wname" -c "$proj_abs"
+  tmux new-window -d -a -t "$ses:" -n "$wname" -c "$proj_abs"
 }
 
 # fm_backend_tmux_current_path: the live pane's current working directory, or
@@ -146,7 +146,7 @@ fm_backend_tmux_agent_alive() {  # <target>
   comm=${comm#-}
   case "$comm" in
     '') printf 'unknown' ;;
-    *claude*|*codex*|*opencode*|*grok*) printf 'alive' ;;
+    *claude*|*codex*|*opencode*|*grok*|*antigravity*|*agy*) printf 'alive' ;;
     zsh|bash|sh|dash|ash|ksh|mksh|tcsh|csh|fish) printf 'dead' ;;
     *) printf 'unknown' ;;
   esac
