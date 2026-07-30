@@ -632,6 +632,115 @@ test_top_level_fixing_ci_running_after_green_stays_working() {
   pass "top-level fixing is not overridden by a stale ci running row"
 }
 
+# A crew that declared `paused:` while its run sits on the ci step is describing
+# the SAME wait the run is in (the ci step monitors the PR until merge/close and
+# does no pipeline work), so the declared pause must survive the run-step path.
+# Reading it as working is what made the supervisor re-escalate `stale` on a crew
+# that had correctly announced its wait.
+test_ci_running_declared_pause_reads_paused() {
+  reset_fakes
+  local d; d=$(new_case ci-paused)
+  make_repo_on_branch "$d/wt" fm/feat-cipaused
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cipaused.meta" "window=fm:fm-feat-cipaused" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting on checks and the owner sign-off for PR #109\n' > "$d/state/feat-cipaused.status"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cipaused)"
+  FM_FAKE_CI_LOGS="CI checks running, waiting for results..."
+  local out; out=$(run_crew_state "$d" feat-cipaused)
+  assert_contains "$out" "state: paused" "declared pause on the ci step -> paused"
+  assert_contains "$out" "source: run-step" "ci pause stays run-step sourced"
+  assert_contains "$out" "ci monitoring PR" "ci pause detail still shows the live run"
+  assert_contains "$out" "waiting on checks and the owner sign-off" "ci pause detail keeps the crew's reason"
+  assert_not_contains "$out" "state: working" "declared pause on ci must not read as working"
+  pass "declared pause on the ci step reads paused"
+}
+
+# Same top-level `status: ci` shape, no steps table - the other way a run reports
+# it is on the ci step.
+test_top_level_ci_declared_pause_reads_paused() {
+  reset_fakes
+  local d; d=$(new_case top-level-ci-paused)
+  make_repo_on_branch "$d/wt" fm/feat-topcipaused
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-topcipaused.meta" "window=fm:fm-feat-topcipaused" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting on the merge decision\n' > "$d/state/feat-topcipaused.status"
+  FM_FAKE_AXI_STATUS="$(run_top_level_ci fm/feat-topcipaused)"
+  FM_FAKE_CI_LOGS="CI checks running, waiting for results..."
+  local out; out=$(run_crew_state "$d" feat-topcipaused)
+  assert_contains "$out" "state: paused" "top-level ci with declared pause -> paused"
+  assert_contains "$out" "source: run-step" "top-level ci pause stays run-step sourced"
+  assert_not_contains "$out" "state: working" "top-level ci pause must not read as working"
+  pass "top-level ci status honors a declared pause"
+}
+
+# BOUNDARY: on any step other than ci the run really is working, so a crew's
+# declared pause must NOT hide that from supervision.
+test_non_ci_step_declared_pause_stays_working() {
+  reset_fakes
+  local d; d=$(new_case noncipaused)
+  make_repo_on_branch "$d/wt" fm/feat-noncipaused
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-noncipaused.meta" "window=fm:fm-feat-noncipaused" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting on the owner sign-off\n' > "$d/state/feat-noncipaused.status"
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-noncipaused)"
+  local out; out=$(run_crew_state "$d" feat-noncipaused)
+  assert_contains "$out" "state: working" "declared pause off the ci step stays working"
+  assert_contains "$out" "source: run-step" "non-ci pause stays run-step sourced"
+  assert_not_contains "$out" "state: paused" "an active non-ci step must not read as paused"
+  pass "declared pause on a non-ci step stays working"
+}
+
+# BOUNDARY: a ci step that is FIXING is real pipeline work, not a merge wait.
+test_ci_fixing_declared_pause_stays_working() {
+  reset_fakes
+  local d; d=$(new_case ci-fixing-paused)
+  make_repo_on_branch "$d/wt" fm/feat-cifixingpaused
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cifixingpaused.meta" "window=fm:fm-feat-cifixingpaused" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting on the owner sign-off\n' > "$d/state/feat-cifixingpaused.status"
+  FM_FAKE_AXI_STATUS="$(run_ci_fixing fm/feat-cifixingpaused)"
+  local out; out=$(run_crew_state "$d" feat-cifixingpaused)
+  assert_contains "$out" "state: working" "a fixing ci step stays working despite a declared pause"
+  assert_not_contains "$out" "state: paused" "ci fixing must not read as paused"
+  pass "declared pause during ci fixing stays working"
+}
+
+# BOUNDARY: needs-decision and blocked are captain-relevant verbs; the ci step
+# must keep their existing reconciliation instead of absorbing them as a pause.
+test_ci_running_needs_decision_unchanged() {
+  reset_fakes
+  local d; d=$(new_case ci-needsdecision)
+  make_repo_on_branch "$d/wt" fm/feat-cineeds
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cineeds.meta" "window=fm:fm-feat-cineeds" "worktree=$d/wt" "kind=ship"
+  printf 'needs-decision: merge now or wait for the owner\n' > "$d/state/feat-cineeds.status"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cineeds)"
+  FM_FAKE_CI_LOGS="CI checks running, waiting for results..."
+  local out; out=$(run_crew_state "$d" feat-cineeds)
+  assert_contains "$out" "state: working" "needs-decision on the ci step keeps its prior state"
+  assert_contains "$out" "status-log superseded by active run" "needs-decision keeps its supersede annotation"
+  assert_not_contains "$out" "state: paused" "needs-decision must never be absorbed as a pause"
+  pass "needs-decision on the ci step is unchanged"
+}
+
+# BOUNDARY: a reviewable green PR outranks a declared wait - the checks-green
+# override still wins over the ci pause.
+test_ci_green_declared_pause_still_done() {
+  reset_fakes
+  local d; d=$(new_case ci-green-paused)
+  make_repo_on_branch "$d/wt" fm/feat-cigreenpaused
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-cigreenpaused.meta" "window=fm:fm-feat-cigreenpaused" "worktree=$d/wt" "kind=ship"
+  printf 'paused: waiting on the owner sign-off\n' > "$d/state/feat-cigreenpaused.status"
+  FM_FAKE_AXI_STATUS="$(run_ci_monitoring fm/feat-cigreenpaused)"
+  FM_FAKE_CI_LOGS="all CI checks passed - still monitoring until merged or closed"
+  local out; out=$(run_crew_state "$d" feat-cigreenpaused)
+  assert_contains "$out" "state: done" "green checks outrank a declared ci pause"
+  assert_contains "$out" "checks green" "green ci detail is preserved under a pause"
+  assert_not_contains "$out" "state: paused" "a reviewable green PR must not read as paused"
+  pass "checks-green still outranks a declared ci pause"
+}
+
 test_top_level_fixing_done_log_stays_working() {
   reset_fakes
   local d; d=$(new_case top-level-fixing-done-log)
@@ -1250,6 +1359,12 @@ test_ci_ready_done_log_relapse_stays_working
 test_ci_fixing_after_green_stays_working
 test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
+test_ci_running_declared_pause_reads_paused
+test_top_level_ci_declared_pause_reads_paused
+test_non_ci_step_declared_pause_stays_working
+test_ci_fixing_declared_pause_stays_working
+test_ci_running_needs_decision_unchanged
+test_ci_green_declared_pause_still_done
 test_terminal_passed
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list

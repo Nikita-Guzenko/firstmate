@@ -34,7 +34,12 @@
 #      the active step is ci, `axi status` alone cannot tell "still waiting on
 #      checks" from "checks green, waiting on merge" (see nm_ci_checks_state) -
 #      a ci-step log-tail check overrides working -> done once checks read
-#      green, so a green PR is never silently read as still-validating.
+#      green, so a green PR is never silently read as still-validating. And a
+#      crew that declared `paused:` while the run sits on the ci step reads
+#      paused, not working (see the ci-step declared-pause block below): the ci
+#      step is the one step with no pipeline work in it, only a merge wait of up
+#      to 168h, so treating it as working turns every declared pause there into
+#      a repeating stale escalation. Any other step keeps working.
 #   3. Reconcile the status log: if its last line says needs-decision/blocked but
 #      the run-step shows the run moved on, the log is deterministically stale and
 #      is flagged superseded. A genuinely parked run plus a needs-decision log
@@ -575,6 +580,33 @@ if [ "$HAVE_RUN" = 1 ]; then
     fi
     if [ "$CI_LOG_STATE" != not-ready ]; then
       emit "done" status-log "$(status_line_note "$LOG_LINE")${SEP}run still monitoring PR"
+    fi
+  fi
+
+  # ci-step declared pause. The ci step is the ONE run step with no pipeline work
+  # in it: it monitors the PR until merge or close, up to 168h, so a crew that
+  # correctly declared `paused:` there is not hiding activity - it is describing
+  # the same wait the run is in. Without this, every such crew reads working, its
+  # idle pane looks like a possible wedge, and the supervisor re-escalates
+  # `stale` every few minutes (verified 2026-07-30 on a crew parked on a green
+  # PR: four consecutive stale escalations, the last demanding deep inspection).
+  # Scope is deliberately narrow:
+  #   - only while the ci step is `running` (a ci step `fixing`, or any earlier
+  #     step, IS real pipeline work and must keep reading working, so a crew's
+  #     pause never hides it from supervision);
+  #   - only from RUN_STATE=working, so the checks-green -> done override above
+  #     still wins (a reviewable PR outranks a declared wait);
+  #   - only for the paused verb - needs-decision/blocked are captain-relevant
+  #     and keep their existing reconciliation below.
+  # The detail keeps both truths visible: the run is alive on ci, and the crew
+  # declared a pause with its reason.
+  # The coarse runs-list path is excluded: $RUN_OUT there belongs to ANOTHER
+  # branch's run, so its ci rows say nothing about this crew's step.
+  if [ "$RUN_STATE" = working ] && [ "$RUN_SOURCE" = full ] && status_is_paused "$LOG_LINE"; then
+    [ -n "$CI_STEP_STATUS" ] || CI_STEP_STATUS=$(nm_effective_ci_step_status)
+    if [ "$CI_STEP_STATUS" = running ]; then
+      RUN_STATE=paused
+      RUN_DETAIL="$RUN_DETAIL${SEP}ci monitoring PR${SEP}crew declared pause: $(status_line_note "$LOG_LINE")"
     fi
   fi
 
