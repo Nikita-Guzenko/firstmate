@@ -33,6 +33,7 @@ Crew status files are append-only wake-event logs, not current-state fields.
 The script header owns the exact run-head ancestry rules.
 During no-mistakes' `ci` monitor phase, it also reads the ci step log tail because `axi status` reports both "still waiting on checks" and "checks green, waiting on merge" as `ci,running`.
 The most recent recognized ci log marker wins, so checks-green monitoring reports done while a later re-arm, failed-check, or issue marker returns the crew to working.
+Because that `ci,running` step is a merge wait with no pipeline work in it, a crew that declared `paused:` while the run sits there reports `paused` rather than working, so a deliberate wait is not re-escalated as a possible wedge; any other step, and a ci step that is `fixing`, keeps the declared pause from hiding real activity.
 Only when no matching run exists does it fall back to the pane busy-signature and then a status-log event whose verb maps to a recognized run-state; a dead pane without a run reports unknown instead of trusting a stale log.
 Decision-only events such as `resolved` never become current state or leak their prose into the current-state detail.
 In that status-log fallback, a declared external wait reports the distinct `paused` state with its reason.
