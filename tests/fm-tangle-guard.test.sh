@@ -8,6 +8,9 @@
 # stranding the primary on a feature branch. Two guards cover it:
 #   GUARD 1 (prevention) - the brief asserts isolation before its branch step, and
 #            fm-spawn refuses to launch unless the resolved worktree is isolated.
+#   GUARD 1c (prevention) - fm-spawn additionally refuses a resolved worktree that
+#            belongs to a DIFFERENT repository, and polls the pane by its unique
+#            pane id so a name-target fallback cannot hand it another home's pane.
 #   GUARD 2 (detection)  - fm-guard and fm-bootstrap alarm when the primary is on
 #            a feature branch, and stay silent on the default branch or detached.
 # These cases pin: the shared lib's branch classification, the fm-guard banner,
@@ -159,12 +162,21 @@ make_spawn_fakebin() {
 #!/usr/bin/env bash
 set -u
 case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_current_path}"*)
+    prev=""
+    for a in "$@"; do
+      [ "$prev" = "-t" ] && printf '%s\n' "$a" >> "${FM_FAKE_POLL_LOG:-/dev/null}"
+      prev=$a
+    done
+    printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows) exit 0 ;;
-  has-session|new-session|new-window|send-keys) exit 0 ;;
+  new-window)
+    case "$*" in *-P*) printf '%s\n' "${FM_FAKE_PANE_ID:-%42}" ;; esac
+    exit 0 ;;
+  has-session|new-session|send-keys) exit 0 ;;
 esac
 exit 0
 SH
@@ -214,8 +226,70 @@ test_spawn_isolation_abort() {
   pass "fm-spawn: aborts unless the resolved worktree is a genuine, isolated worktree"
 }
 
+# GUARD 1c: the resolved path must be a worktree OF THE TARGET PROJECT. Every
+# firstmate home on a machine shares one tmux session, so a poll that resolves
+# to the wrong pane can hand back an unrelated repository's root - which is a
+# git top-level and is not the target's primary checkout, so it satisfies every
+# assertion GUARD 1b makes. The shared git-common-dir is what separates them.
+test_spawn_foreign_repo_abort() {
+  local home proj foreign fakebin out status
+  home="$TMP_ROOT/foreign-home"
+  mkdir -p "$home/data"
+  proj=$(make_repo "$TMP_ROOT/foreign-proj")
+  foreign=$(make_repo "$TMP_ROOT/foreign-other")
+  fakebin=$(make_spawn_fakebin "$TMP_ROOT/foreign-fake")
+  git -C "$proj" worktree add -q --detach "$TMP_ROOT/foreign-wt" >/dev/null 2>&1
+
+  # Abort: the pane resolves to an unrelated repository's root.
+  out=$(run_spawn "$home" abort-foreign-gg7 "$proj" "$foreign" "$fakebin"); status=$?
+  expect_code 1 "$status" "spawn into an unrelated repository should abort"
+  assert_contains "$out" "is not a worktree of the target project" \
+    "foreign-repo spawn lacked the membership error"
+  assert_absent "$home/state/abort-foreign-gg7.meta" "aborted spawn must not record meta"
+
+  # Abort: a linked worktree of the FOREIGN repo is still foreign.
+  git -C "$foreign" worktree add -q --detach "$TMP_ROOT/foreign-other-wt" >/dev/null 2>&1
+  out=$(run_spawn "$home" abort-foreignwt-hh8 "$proj" "$TMP_ROOT/foreign-other-wt" "$fakebin"); status=$?
+  expect_code 1 "$status" "spawn into another repo's worktree should abort"
+  assert_contains "$out" "is not a worktree of the target project" \
+    "foreign-worktree spawn lacked the membership error"
+
+  # Proceed: a genuine linked worktree of the target project still passes.
+  out=$(run_spawn "$home" ok-member-ii9 "$proj" "$TMP_ROOT/foreign-wt" "$fakebin"); status=$?
+  expect_code 0 "$status" "spawn into a worktree of the target project should succeed"
+  assert_not_contains "$out" "is not a worktree of the target project" \
+    "legitimate worktree wrongly tripped the membership guard"
+  pass "fm-spawn: aborts when the resolved worktree belongs to another repository"
+}
+
+# The cwd poll must target the created pane's globally unique id, never the
+# session:window name - tmux silently falls back to the session's CURRENT
+# window when a name target does not resolve, and that window can belong to
+# another firstmate home sharing the session.
+test_spawn_polls_by_pane_id() {
+  local home proj fakebin log out status
+  home="$TMP_ROOT/paneid-home"
+  mkdir -p "$home/data"
+  proj=$(make_repo "$TMP_ROOT/paneid-proj")
+  fakebin=$(make_spawn_fakebin "$TMP_ROOT/paneid-fake")
+  git -C "$proj" worktree add -q --detach "$TMP_ROOT/paneid-wt" >/dev/null 2>&1
+  log="$TMP_ROOT/paneid-poll.log"
+  : > "$log"
+
+  out=$(FM_FAKE_POLL_LOG="$log" FM_FAKE_PANE_ID='%77' \
+    run_spawn "$home" ok-paneid-jj1 "$proj" "$TMP_ROOT/paneid-wt" "$fakebin"); status=$?
+  expect_code 0 "$status" "spawn into a genuine worktree should succeed"
+  assert_contains "$out" "spawned ok-paneid-jj1" "pane-id spawn did not report success"
+  assert_contains "$(cat "$log")" '%77' "cwd poll did not target the created pane id"
+  assert_not_contains "$(cat "$log")" 'firstmate:fm-ok-paneid-jj1' \
+    "cwd poll still used the name-based session:window target"
+  pass "fm-spawn: the worktree-discovery poll targets the pane id, not the window name"
+}
+
 test_lib_classification
 test_guard_banner
 test_bootstrap_line
 test_brief_assertion_precedes_branch
 test_spawn_isolation_abort
+test_spawn_foreign_repo_abort
+test_spawn_polls_by_pane_id

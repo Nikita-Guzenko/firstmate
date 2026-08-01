@@ -672,8 +672,25 @@ real_path_or_raw() {  # <path>
 # herdr-sm-spaces-k4). Both branches converge on the same $T ("target") string
 # that every downstream operation (send/capture/kill) already treats as opaque
 # per-backend routing (fm_backend_resolve_selector).
+# git_common_dir_real: the physical path of <dir>'s shared git directory, or
+# empty when <dir> is not a git repository. Every worktree of a repository -
+# including a treehouse pool worktree - shares one common dir, while an
+# unrelated repository necessarily has its own, so comparing this value is a
+# naming- and path-prefix-independent proof of "belongs to the same repo".
+git_common_dir_real() {  # <dir>
+  local dir=$1 common
+  common=$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null) || return 0
+  [ -n "$common" ] || return 0
+  case "$common" in
+    /*) ;;
+    *) common="$dir/$common" ;;
+  esac
+  (cd "$common" 2>/dev/null && pwd -P) || return 0
+}
+
 validate_spawn_worktree() {  # <source> <inspect-target>
   local source=$1 inspect_target=$2 wt_real proj_real wt_top wt_top_real
+  local wt_common proj_common
   wt_real=
   if ! wt_real=$(cd "$WT" 2>/dev/null && pwd -P); then
     wt_real=
@@ -688,14 +705,36 @@ validate_spawn_worktree() {  # <source> <inspect-target>
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
   fi
+  # The assertions above prove only that the resolved path is SOME git worktree
+  # root other than the primary checkout - an unrelated repository (another
+  # firstmate home's own checkout, reachable because every home shares one tmux
+  # session) passes both. Prove membership of the target project instead.
+  wt_common=$(git_common_dir_real "$wt_real")
+  proj_common=$(git_common_dir_real "$proj_real")
+  if [ -z "$wt_common" ] || [ -z "$proj_common" ] || [ "$wt_common" != "$proj_common" ]; then
+    echo "error: $source resolved '$WT', which is not a worktree of the target project '$PROJ_ABS' (shared git dir '${wt_common:-none}' vs '${proj_common:-none}'); refusing to launch into a foreign repository. Inspect target $inspect_target" >&2
+    exit 1
+  fi
 }
 
 W="fm-$ID"
+# POLL_T is the target used ONLY for the worktree-discovery cwd poll below.
+# It defaults to $T, and a backend may override it with a stronger identity
+# than $T carries. $T itself is unchanged: it is what gets sent keys and is
+# recorded as window= in state/<id>.meta, which fm-teardown.sh, fm-watch.sh,
+# fm-peek.sh and fm-send.sh all consume.
+POLL_T=""
 case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
     T="$SES:$W"
-    fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS" || exit 1
+    # The pane id, not "$T", is what the cwd poll targets: a name-based tmux
+    # target that fails to resolve falls back to the session's current window
+    # (which, with every home sharing one session, can belong to another
+    # firstmate home) instead of erroring, and that pane's cwd would then be
+    # accepted as this task's worktree.
+    TMUX_PANE_ID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    POLL_T=$TMUX_PANE_ID
     ;;
   herdr)
     # fm_backend_herdr_workspace_label resolves the target workspace from
@@ -784,6 +823,7 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
+[ -n "$POLL_T" ] || POLL_T="$T"
 spawn_send_text_line() {  # <target> <text>
   case "$BACKEND" in
     tmux) fm_backend_tmux_send_text_line "$1" "$2" ;;
@@ -827,7 +867,7 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # prefix would otherwise make the pane's OS-level cwd read differ from
   # PROJ_ABS on the very first poll, before the pane has actually moved.
   for _ in $(seq 1 60); do
-    p=$(spawn_current_path "$T" || true)
+    p=$(spawn_current_path "$POLL_T" || true)
     if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ]; then
       WT="$p"
       break
