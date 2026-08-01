@@ -71,13 +71,18 @@ fm_backend_tmux_container_ensure() {
 # refusing an existing <window-name> in <session>. Mirrors fm-spawn.sh's
 # duplicate-check-then-new-window sequence, including the exact error text
 # (session:window, matching how fm-spawn.sh composed its own $T).
+# Prints the created pane's id ("%12"). A pane id is globally unique across
+# sessions and never falls back to another pane, unlike a session:window name
+# target, which tmux silently resolves to the session's CURRENT window when the
+# name does not resolve at that instant - a real hazard here because every
+# firstmate home on a machine shares one "firstmate" session.
 fm_backend_tmux_create_task() {  # <session> <window-name> <proj-abs>
   local ses=$1 wname=$2 proj_abs=$3
   if tmux list-windows -t "$ses" -F '#{window_name}' | grep -qx "$wname"; then
     echo "error: window $ses:$wname already exists" >&2
     return 1
   fi
-  tmux new-window -d -a -t "$ses:" -n "$wname" -c "$proj_abs"
+  tmux new-window -d -a -t "$ses:" -n "$wname" -c "$proj_abs" -P -F '#{pane_id}'
 }
 
 # fm_backend_tmux_current_path: the live pane's current working directory, or
