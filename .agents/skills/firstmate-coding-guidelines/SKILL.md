@@ -75,6 +75,10 @@ Firstmate adds this skill's load instruction to firstmate-repo briefs by hand in
 - `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
 - Run `shellcheck bin/*.sh bin/backends/*.sh tests/*.sh` before treating a script change as done.
 - Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
+- A test must assert a property of the code, never of the machine or the session it runs in.
+- Two leaks recur and both fail silently: a fixture `PATH` ending in the real `/usr/bin` lets a host-installed tool stand in for a fake the test deliberately deleted, and `bin/fm-harness.sh` reads `CLAUDECODE`/`PI_CODING_AGENT`/`GROK_AGENT`/`ANTIGRAVITY_AGENT` before it walks the process tree, so a suite run inside a real harness session ignores its own fake `ps`.
+- Clear those markers and build a fixture-only `PATH`; `hermetic_path` in `tests/fm-session-start.test.sh` is the worked example.
+- The runners abort at the first failing case, so one host-dependent failure hides every case after it - after fixing one, run the whole file before believing it is green.
 - A backend-verification doc (`docs/*-backend.md`) records empirical facts, not assumptions.
 - Include the date, version, exact commands run, and exact output.
 - Write incidents the same way, as evidence, not narrative alone.
