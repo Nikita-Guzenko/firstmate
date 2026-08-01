@@ -80,6 +80,38 @@ SH
   printf '%s\n' manual > "${fakebin%/*}/home-placeholder" 2>/dev/null || true
 }
 
+# hermetic_path <fakebin>: echoes a PATH made of the test's own fakebin plus a
+# private mirror of the core utilities the scripts under test shell out to.
+#
+# Use this instead of "$fakebin:$BASE_PATH" in any case that forces a MISSING
+# diagnostic by DELETING a fake tool from the fakebin.
+# bin/fm-bootstrap.sh probes with `command -v`, so a deleted fake is only really
+# absent when it is absent from the whole PATH; BASE_PATH is /usr/bin:/bin:...,
+# so on a machine that happens to have that tool installed as a distro package
+# (a real /usr/bin/node here) the real binary silently takes the fake's place,
+# bootstrap correctly stays quiet, and the assertion fails on a property of the
+# host rather than of the code.
+# Never "fix" a failure here by re-adding a system bin directory to this PATH.
+#
+# The list is deliberately explicit rather than a mirror of BASE_PATH: mirroring
+# /usr/bin costs ~11s per case, and a curated list makes the dependency visible.
+# A missing entry is loud, not subtle - dropping `mktemp` wedges the digest for
+# minutes rather than failing fast - so add to the list, never trim it blind.
+hermetic_path() {
+  local fakebin=$1 sysbin u p
+  sysbin="${fakebin%/*}/sysbin"
+  if [ ! -d "$sysbin" ]; then
+    mkdir -p "$sysbin"
+    for u in bash sh env git grep sed awk cut head tail sort uniq tr wc cat ls \
+      mkdir rm mv cp ln touch date find stat printf dirname basename readlink \
+      id ps sleep chmod xargs mktemp; do
+      p=$(PATH="$BASE_PATH" command -v "$u" 2>/dev/null) || continue
+      ln -sf "$p" "$sysbin/$u"
+    done
+  fi
+  printf '%s:%s\n' "$fakebin" "$sysbin"
+}
+
 # make_fake_ps_claude <fakebin>: harness_pid()/holder_alive() (fm-lock.sh) walk
 # `ps` output looking for a harness command name; this fake reports EVERY
 # queried pid as a live `claude` harness, so the very first ancestry check
@@ -184,9 +216,20 @@ SH
   chmod +x "$fakebin/herdr"
 }
 
+# run_session_start <home> <root> <path>: run the digest against the fixture and
+# NOTHING of the ambient session.
+#
+# The harness-marker variables are cleared for the same reason hermetic_path
+# exists: bin/fm-harness.sh checks CLAUDECODE/PI_CODING_AGENT/GROK_AGENT/
+# ANTIGRAVITY_AGENT before it ever walks the process tree, so a suite run from
+# inside a real Claude Code session reports harness `claude` no matter what the
+# fake `ps` and FM_FAKE_HARNESS say, and every pi case asserts a property of the
+# runner instead of of the code.
+# Each case must get its harness from its own fixture; do not let one back in.
 run_session_start() {  # <home> <root> <path>
   local home=$1 root=$2 path=$3
-  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$path" "$SESSION_START"
+  CLAUDECODE='' PI_CODING_AGENT='' GROK_AGENT='' ANTIGRAVITY_AGENT='' \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$path" "$SESSION_START"
 }
 
 hash_file_for_test() {
@@ -335,11 +378,14 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
   # Force a MISSING diagnostic line so the bootstrap section is non-trivial.
+  # hermetic_path, not "$fakebin:$BASE_PATH": see its comment - a system `node`
+  # would otherwise fill in for the deleted fake and this case would assert a
+  # property of the host.
   rm -f "$fakebin/node"
 
   printf 'window=fm-sess:w1\nkind=ship\n' > "$home/state/task-a.meta"
 
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  out=$(run_session_start "$home" "$root" "$(hermetic_path "$fakebin")")
 
   lock_line=$(printf '%s\n' "$out" | grep -n '^LOCK$' | head -1 | cut -d: -f1)
   boot_line=$(printf '%s\n' "$out" | grep -n '^BOOTSTRAP$' | head -1 | cut -d: -f1)
@@ -478,11 +524,13 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
+  # Same host-leak hazard as the ordering case above: hermetic_path, never
+  # "$fakebin:$BASE_PATH", whenever the assertion depends on a tool's absence.
   rm -f "$fakebin/node"
 
   append_wake "$home/state" signal task-z "needs-decision: pick a library"
 
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  out=$(run_session_start "$home" "$root" "$(hermetic_path "$fakebin")")
 
   # fm-lock.sh's own exact success text.
   assert_contains "$out" "lock acquired: harness pid" "fm-lock.sh's real output did not appear (composition, not reimplementation)"
