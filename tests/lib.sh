@@ -56,6 +56,28 @@ fm_skip_without() {
   return 1
 }
 
+# fm_skip_without_ts_import <label>: skip <label> (ok-marked, return 1) when the
+# `node` on PATH cannot import a TypeScript (.ts) ES module. The generated Pi
+# extension is a real .ts file that Pi loads with native type-stripping; older
+# node builds (e.g. v22 without --experimental-strip-types support) throw
+# ERR_UNKNOWN_FILE_EXTENSION on such an import. Probing the actual runtime
+# capability - not a version string or `command -v node` - keeps the case green
+# in shells whose node strips types (nvm v24) and skipped, not failed, where the
+# host node cannot, instead of asserting a property of the host node itself.
+fm_skip_without_ts_import() {
+  local label="$1" probe_dir probe_mod
+  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-ts-probe.XXXXXX") || return 0
+  probe_mod="$probe_dir/probe.ts"
+  printf 'export const ok: number = 1;\n' > "$probe_mod"
+  if node --input-type=module -e "import(process.argv[1]).then(()=>process.exit(0)).catch(()=>process.exit(1))" "$probe_mod" >/dev/null 2>&1; then
+    rm -rf "$probe_dir"
+    return 0
+  fi
+  rm -rf "$probe_dir"
+  printf 'ok - %s (skipped: node cannot import TypeScript .ts modules)\n' "$label"
+  return 1
+}
+
 # --- self-cleaning temp root ------------------------------------------------
 #
 # fm_test_tmproot <prefix> echoes a fresh temp dir and registers it for removal

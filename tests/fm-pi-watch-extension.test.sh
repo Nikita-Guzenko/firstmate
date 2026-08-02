@@ -82,6 +82,7 @@ test_spawn_template_mentions_pi_watch_placeholder() {
 
 test_pi_extension_reports_external_healthy_watcher() {
   fm_skip_without node "Pi extension reports external healthy watcher output" || return 0
+  fm_skip_without_ts_import "Pi extension reports external healthy watcher output" || return 0
   local repo home out status
   repo="$TMP_ROOT/pi-external-healthy-root"
   home="$TMP_ROOT/pi-external-healthy-home"
