@@ -82,6 +82,7 @@ test_spawn_template_mentions_pi_watch_placeholder() {
 
 test_pi_extension_reports_external_healthy_watcher() {
   fm_skip_without node "Pi extension reports external healthy watcher output" || return 0
+  fm_skip_without_ts_import "Pi extension reports external healthy watcher output" || return 0
   local repo home out status
   repo="$TMP_ROOT/pi-external-healthy-root"
   home="$TMP_ROOT/pi-external-healthy-home"
@@ -95,6 +96,8 @@ SH
   out=$(PLUGIN="$home/state/fm-primary-pi-watch.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" node --input-type=module 2>&1 <<'EOF'
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+
+const { waitFor } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 
 let handler = null;
 let prompt = "";
@@ -120,9 +123,9 @@ if (!result.includes("started Pi extension arm child")) {
   console.error(result);
   process.exit(1);
 }
-for (let i = 0; i < 50 && !prompt; i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
+await waitFor("the Pi arm child to send a follow-up wake prompt", () => prompt, {
+  diagnose: () => `arm command returned: ${result}`,
+});
 if (!prompt.includes("FIRSTMATE WATCHER WAKE")) {
   console.error(`missing follow-up prompt: ${prompt}`);
   process.exit(1);
@@ -138,8 +141,7 @@ if (!prompt.includes("watcher: healthy pid=1")) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi extension must surface an external healthy watcher as an owned-wake failure"
-  [ -z "$out" ] || fail "Pi external-healthy test printed output: $out"
+  expect_node_ok "$status" "$out" "Pi extension must surface an external healthy watcher as an owned-wake failure"
   pass "Pi extension reports external healthy watcher output"
 }
 
@@ -177,9 +179,10 @@ printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
-import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { waitForFileContaining } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -189,14 +192,7 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 50 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
-const text = readFileSync(process.env.FM_ARM_LOG, "utf8");
+const text = await waitForFileContaining(process.env.FM_ARM_LOG, "root=");
 const expectedRoot = realpathSync(process.env.WORKTREE);
 if (!text.includes(`home=${process.env.FM_HOME}`) || !text.includes(`root=${expectedRoot}`)) {
   console.error(text);
@@ -205,8 +201,7 @@ if (!text.includes(`home=${process.env.FM_HOME}`) || !text.includes(`root=${expe
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must use FM_HOME state outside the repo root"
-  [ -z "$out" ] || fail "OpenCode effective-state test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch plugin must use FM_HOME state outside the repo root"
   pass "OpenCode watcher plugin uses the effective FM_HOME state"
 }
 
@@ -228,9 +223,10 @@ printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { waitForFileContaining } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -240,23 +236,11 @@ const hooks = await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 50 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
-const text = readFileSync(process.env.FM_ARM_LOG, "utf8");
-if (!text.includes("poll=7")) {
-  console.error(text);
-  process.exit(1);
-}
+await waitForFileContaining(process.env.FM_ARM_LOG, "poll=7");
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must source FM_HOME config outside the repo root"
-  [ -z "$out" ] || fail "OpenCode effective-config test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch plugin must source FM_HOME config outside the repo root"
   pass "OpenCode watcher plugin sources the effective config"
 }
 
@@ -281,6 +265,7 @@ SH
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { settle, waitFor } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 const hooks = await mod.FmPrimaryWatchArm({
@@ -291,25 +276,21 @@ const hooks = await mod.FmPrimaryWatchArm({
 const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
 await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
+await settle(120, "give a wrongly-armed watch arm a chance to write its log before asserting it did not");
 if (existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await hooks.event(event);
-for (let i = 0; i < 50 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run after the session lock matched");
-  process.exit(1);
-}
+await waitFor(
+  `the watch arm to run once the session lock matched and write ${process.env.FM_ARM_LOG}`,
+  () => existsSync(process.env.FM_ARM_LOG),
+);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must arm only when this session owns the fleet lock"
-  [ -z "$out" ] || fail "OpenCode session-lock test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch plugin must arm only when this session owns the fleet lock"
   pass "OpenCode watcher plugin requires session lock ownership"
 }
 
@@ -335,6 +316,7 @@ SH
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { settle } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
 await mod.FmPrimaryWatchArm({
@@ -344,7 +326,7 @@ await mod.FmPrimaryWatchArm({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 const status = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
-await new Promise((resolve) => setTimeout(resolve, 120));
+await settle(120, "give a wrongly-armed coordinator a chance to write its log before asserting it did not");
 if (status !== "not-primary") {
   console.error(`expected not-primary, got ${status}`);
   process.exit(1);
@@ -356,8 +338,7 @@ if (existsSync(process.env.FM_ARM_LOG)) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch coordinator must keep primary scope checks in the shared arm path"
-  [ -z "$out" ] || fail "OpenCode coordinator-scope test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch coordinator must keep primary scope checks in the shared arm path"
   pass "OpenCode watcher coordinator respects primary scope"
 }
 
@@ -382,16 +363,13 @@ SH
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { waitFor } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 let prompts = 0;
-const waitForPrompts = async (expected) => {
-  for (let i = 0; i < 50; i += 1) {
-    if (prompts >= expected) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  console.error(`expected ${expected} prompts, saw ${prompts}`);
-  process.exit(1);
-};
+const waitForPrompts = (expected) =>
+  waitFor(`${expected} wake prompt(s) from the watcher arm`, () => prompts >= expected, {
+    diagnose: () => `saw ${prompts} prompt(s)`,
+  });
 const client = {
   session: {
     promptAsync: async () => {
@@ -413,8 +391,7 @@ await waitForPrompts(2);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must arm on the idle after a wake follow-up"
-  [ -z "$out" ] || fail "OpenCode rearm test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch plugin must arm on the idle after a wake follow-up"
   pass "OpenCode watcher plugin rearms after a watcher wake"
 }
 
@@ -447,6 +424,7 @@ SH
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { waitFor } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const armMod = await import(pathToFileURL(process.env.ARM_PLUGIN).href);
 const guardMod = await import(pathToFileURL(process.env.GUARD_PLUGIN).href);
 let promptBody = "";
@@ -469,13 +447,10 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 50 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
+await waitFor(
+  `the watch arm to run and write ${process.env.FM_ARM_LOG}`,
+  () => existsSync(process.env.FM_ARM_LOG),
+);
 if (existsSync(process.env.FM_GUARD_LOG)) {
   console.error("turn-end guard ran before the watch arm could establish supervision");
   process.exit(1);
@@ -487,8 +462,7 @@ if (promptBody) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode turn-end guard must let the auto-arm plugin establish supervision first"
-  [ -z "$out" ] || fail "OpenCode coordination test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode turn-end guard must let the auto-arm plugin establish supervision first"
   pass "OpenCode watcher plugin coordinates with the turn-end guard"
 }
 
@@ -518,9 +492,10 @@ exit 2
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-turnend-guard.sh"
   out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
+const { waitFor, waitForFileContaining } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
 const armMod = await import(pathToFileURL(process.env.ARM_PLUGIN).href);
 const guardMod = await import(pathToFileURL(process.env.GUARD_PLUGIN).href);
 let promptBody = "";
@@ -543,21 +518,15 @@ const guardHooks = await guardMod.FmPrimaryTurnendGuard({
 });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await guardHooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
-for (let i = 0; i < 50 && !existsSync(process.env.FM_GUARD_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
-if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run");
-  process.exit(1);
-}
-if (!readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=--restart")) {
-  console.error("watch arm was not asked to restart into an owned child");
-  process.exit(1);
-}
-if (!existsSync(process.env.FM_GUARD_LOG)) {
-  console.error("turn-end guard was suppressed by an external healthy watcher");
-  process.exit(1);
-}
+await waitFor(
+  `the turn-end guard to run and write ${process.env.FM_GUARD_LOG} after the external healthy watcher`,
+  () => existsSync(process.env.FM_GUARD_LOG),
+  { diagnose: () => `watch arm log present: ${existsSync(process.env.FM_ARM_LOG)}` },
+);
+await waitForFileContaining(process.env.FM_ARM_LOG, "args=--restart");
+await waitFor("the blind-turn prompt to be delivered", () => promptBody, {
+  diagnose: () => `prompt body so far: ${JSON.stringify(promptBody)}`,
+});
 if (!promptBody.includes("TURN WOULD END BLIND")) {
   console.error(`missing blind-turn prompt: ${promptBody}`);
   process.exit(1);
@@ -565,8 +534,7 @@ if (!promptBody.includes("TURN WOULD END BLIND")) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must not treat external healthy output as an owned arm"
-  [ -z "$out" ] || fail "OpenCode external-healthy test printed output: $out"
+  expect_node_ok "$status" "$out" "OpenCode watch plugin must not treat external healthy output as an owned arm"
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
 }
 

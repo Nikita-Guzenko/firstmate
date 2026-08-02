@@ -30,6 +30,11 @@ FM_TEST_LIB_SOURCED=1
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Path to the shared node polling helper, for tests that drive a plugin or
+# extension through `node` and must wait on an asynchronous side effect. Its
+# header explains why a fixed sleep window is never the right wait here.
+export FM_TEST_WAIT_FOR="$ROOT/tests/wait-for.mjs"
+
 # --- reporters --------------------------------------------------------------
 
 fail() {
@@ -48,6 +53,28 @@ pass() {
 fm_skip_without() {
   command -v "$1" >/dev/null 2>&1 && return 0
   printf 'ok - %s (skipped: %s not found)\n' "$2" "$1"
+  return 1
+}
+
+# fm_skip_without_ts_import <label>: skip <label> (ok-marked, return 1) when the
+# `node` on PATH cannot import a TypeScript (.ts) ES module. The generated Pi
+# extension is a real .ts file that Pi loads with native type-stripping; older
+# node builds (e.g. v22 without --experimental-strip-types support) throw
+# ERR_UNKNOWN_FILE_EXTENSION on such an import. Probing the actual runtime
+# capability - not a version string or `command -v node` - keeps the case green
+# in shells whose node strips types (nvm v24) and skipped, not failed, where the
+# host node cannot, instead of asserting a property of the host node itself.
+fm_skip_without_ts_import() {
+  local label="$1" probe_dir probe_mod
+  probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-ts-probe.XXXXXX") || return 0
+  probe_mod="$probe_dir/probe.ts"
+  printf 'export const ok: number = 1;\n' > "$probe_mod"
+  if node --input-type=module -e "import(process.argv[1]).then(()=>process.exit(0)).catch(()=>process.exit(1))" "$probe_mod" >/dev/null 2>&1; then
+    rm -rf "$probe_dir"
+    return 0
+  fi
+  rm -rf "$probe_dir"
+  printf 'ok - %s (skipped: node cannot import TypeScript .ts modules)\n' "$label"
   return 1
 }
 
@@ -192,6 +219,16 @@ assert_not_contains() {
 expect_code() {
   local expected=$1 actual=$2 label=$3
   [ "$actual" = "$expected" ] || fail "$label: expected exit $expected, got $actual"
+}
+
+# expect_node_ok <status> <output> <label>: assert a node-driven case exited 0
+# and printed nothing, and on failure print the captured output. Plain
+# expect_code swallows it, which is how a waitFor() timeout diagnostic can be
+# lost behind a bare "expected exit 0, got 1".
+expect_node_ok() {
+  local status=$1 output=$2 label=$3
+  [ "$status" = 0 ] || fail "$label: expected exit 0, got $status"$'\n'"--- node output ---"$'\n'"$output"
+  [ -z "$output" ] || fail "$label: printed unexpected output"$'\n'"--- node output ---"$'\n'"$output"
 }
 
 # assert_grep <pattern> <file> <msg>: fixed-string grep must match in <file>.

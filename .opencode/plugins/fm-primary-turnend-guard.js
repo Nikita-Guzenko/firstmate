@@ -21,6 +21,12 @@ function runProcess(command, args, input = "") {
     });
     child.on("error", () => resolve({ code: 0, stdout: "", stderr: "" }));
     child.on("close", (code) => resolve({ code: code ?? 0, stdout, stderr }));
+    // A child that exits before reading stdin (a fast guard script, or any
+    // child under load) makes this write fail with EPIPE. That is an error on
+    // the stdin stream, which `child.on("error")` does NOT cover, so without
+    // this handler node rethrows it as an unhandled 'error' event and kills the
+    // host process. Swallow it: `close` still delivers the real exit code.
+    child.stdin.on("error", () => {});
     child.stdin.end(input);
   });
 }
