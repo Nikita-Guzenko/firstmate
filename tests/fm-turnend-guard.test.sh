@@ -522,7 +522,57 @@ test_opencode_plugin_forces_followup() {
   assert_contains "$content" 'promptAsync' "OpenCode plugin must force a follow-up turn"
   assert_contains "$content" 'skipNextIdle' "OpenCode plugin must carry a loop guard"
   assert_contains "$content" 'worktree' "OpenCode plugin must anchor the guard from the git worktree path"
+  # A child that exits before reading stdin makes the plugin's stdin write fail
+  # with EPIPE, which child.on("error") does not cover; without a stdin error
+  # handler node kills the host process. Seen for real as a crashed test run
+  # under load, so keep the handler.
+  assert_contains "$content" 'child.stdin.on("error"' "OpenCode plugin must swallow EPIPE when the guard exits before reading stdin"
   pass ".opencode primary plugin: session.idle forces one follow-up through the shared guard"
+}
+
+test_opencode_plugin_survives_guard_that_never_reads_stdin() {
+  fm_skip_without node "OpenCode plugin must survive a guard that exits without reading stdin" || return 0
+  local plugin worktree_dir out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
+  [ -f "$plugin" ] || fail "tracked OpenCode primary plugin is missing"
+  worktree_dir="$TMP_ROOT/opencode-plugin-epipe"
+  mkdir -p "$worktree_dir/bin"
+  # No `cat`: the guard exits with stdin unread, closing the read end of the
+  # pipe the plugin is about to write to.
+  cat > "$worktree_dir/bin/fm-turnend-guard.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'guard-fired\n' >&2
+exit 2
+EOF
+  chmod +x "$worktree_dir/bin/fm-turnend-guard.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$worktree_dir" node 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let prompts = 0;
+const client = { session: { promptAsync: async () => { prompts += 1; } } };
+// Repeat: EPIPE only lands when the write loses the race with the child's exit,
+// so one pass proves little. Any unhandled stdin error kills this process.
+// The module-level skipNextIdle loop guard suppresses every other prompt, so
+// assert survival plus some prompts rather than one per event.
+for (let i = 0; i < 25; i += 1) {
+  const hooks = await mod.FmPrimaryTurnendGuard({
+    client,
+    directory: process.env.WORKTREE,
+    worktree: process.env.WORKTREE,
+  });
+  await hooks.event({ event: { type: "session.idle", properties: { sessionID: `session-${i}` } } });
+}
+if (prompts < 1) {
+  console.error(`guard never prompted across 25 idles, saw ${prompts}`);
+  process.exit(1);
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode plugin must survive a guard that exits without reading stdin"
+  [ -z "$out" ] || fail "OpenCode plugin EPIPE test printed output: $out"
+  pass ".opencode primary plugin: a guard that never reads stdin does not kill the host"
 }
 
 test_opencode_plugin_anchors_guard_to_worktree() {
@@ -585,6 +635,9 @@ test_pi_extension_forces_followup() {
   assert_contains "$content" 'session-start operating block' "pi extension must use harness-neutral repair wording"
   assert_contains "$content" '.pi-turnend-extension-loaded' "pi extension must write its loaded marker for session-start diagnostics"
   assert_contains "$content" 'lockOwnership' "pi extension loaded marker must respect the session lock"
+  # Same EPIPE hazard as the OpenCode plugin: a guard that exits without reading
+  # stdin turns this write into an unhandled 'error' event that kills the host.
+  assert_contains "$content" 'child.stdin.on("error"' "pi extension must swallow EPIPE when the guard exits before reading stdin"
   assert_not_contains "$content" 'Run bin/fm-watch-arm.sh as a background task' "pi extension must not hardcode the old watcher-arm instruction"
   pass ".pi primary extension: turn_end forces one follow-up through the shared guard"
 }
@@ -629,5 +682,6 @@ test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_forces_followup
 test_opencode_plugin_anchors_guard_to_worktree
+test_opencode_plugin_survives_guard_that_never_reads_stdin
 test_pi_extension_forces_followup
 test_grok_hook_invokes_adapter

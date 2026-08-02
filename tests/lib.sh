@@ -30,6 +30,11 @@ FM_TEST_LIB_SOURCED=1
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Path to the shared node polling helper, for tests that drive a plugin or
+# extension through `node` and must wait on an asynchronous side effect. Its
+# header explains why a fixed sleep window is never the right wait here.
+export FM_TEST_WAIT_FOR="$ROOT/tests/wait-for.mjs"
+
 # --- reporters --------------------------------------------------------------
 
 fail() {
@@ -192,6 +197,16 @@ assert_not_contains() {
 expect_code() {
   local expected=$1 actual=$2 label=$3
   [ "$actual" = "$expected" ] || fail "$label: expected exit $expected, got $actual"
+}
+
+# expect_node_ok <status> <output> <label>: assert a node-driven case exited 0
+# and printed nothing, and on failure print the captured output. Plain
+# expect_code swallows it, which is how a waitFor() timeout diagnostic can be
+# lost behind a bare "expected exit 0, got 1".
+expect_node_ok() {
+  local status=$1 output=$2 label=$3
+  [ "$status" = 0 ] || fail "$label: expected exit 0, got $status"$'\n'"--- node output ---"$'\n'"$output"
+  [ -z "$output" ] || fail "$label: printed unexpected output"$'\n'"--- node output ---"$'\n'"$output"
 }
 
 # assert_grep <pattern> <file> <msg>: fixed-string grep must match in <file>.
