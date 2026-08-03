@@ -18,6 +18,8 @@
 #   - composition: the script invokes the real fm-lock.sh/fm-bootstrap.sh/
 #     fm-wake-drain.sh (their real, distinctive output appears verbatim), it
 #     does not reimplement their logic
+#   - kimi harness recognition: fm-harness.sh detects it from process ancestry
+#     and fm-lock.sh accepts it as a live lock holder
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -365,6 +367,30 @@ EOF
   assert_contains "$out" "NEXT STEP" "closing reminder missing on the read-only path"
 
   pass "a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest"
+}
+
+# --- harness detection: kimi ---------------------------------------------------
+
+test_fm_harness_detects_kimi_from_ancestry() {
+  local fakebin out
+  fakebin=$(fm_fakebin "$TMP_ROOT/kimi-detect-fake")
+  make_fake_ps_harness "$fakebin" kimi
+  out=$(CLAUDECODE='' PI_CODING_AGENT='' GROK_AGENT='' ANTIGRAVITY_AGENT='' \
+    FM_FAKE_HARNESS=kimi PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-harness.sh")
+  assert_contains "$out" "kimi" "fm-harness did not detect kimi from process ancestry"
+  pass "fm-harness detects kimi from process ancestry"
+}
+
+test_fm_lock_recognizes_kimi_holder() {
+  local home fakebin out
+  home="$TMP_ROOT/lock-kimi-home"
+  fakebin=$(fm_fakebin "$TMP_ROOT/lock-kimi-fake")
+  mkdir -p "$home/state"
+  printf '%s\n' "$$" > "$home/state/.lock"
+  make_fake_ps_harness "$fakebin" kimi
+  out=$(FM_FAKE_HARNESS=kimi FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" status)
+  assert_contains "$out" "lock: held by live harness pid" "fm-lock did not recognize kimi as a live holder"
+  pass "fm-lock recognizes kimi harness processes"
 }
 
 # --- output ordering ----------------------------------------------------------
@@ -736,6 +762,8 @@ EOF
 
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
+test_fm_harness_detects_kimi_from_ancestry
+test_fm_lock_recognizes_kimi_holder
 test_output_ordering_diagnostics_lead
 test_status_tail_bounding
 test_orphan_status_logs_are_printed

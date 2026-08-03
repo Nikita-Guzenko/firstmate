@@ -44,6 +44,11 @@ On `unknown`, ask the captain instead of guessing.
 A captain override always beats detection.
 When verifying a new adapter, record its env marker and command name in `bin/fm-harness.sh`.
 
+`kimi` (Kimi Code CLI) is recognized as a PRIMARY harness only - detection and the session lock - and is NOT a verified crew adapter.
+It sets no env marker; detection is ancestry-only via comm `kimi` (verified 2026-08-03).
+`fm-spawn.sh` has no kimi launch template, so a kimi crew resolution fails closed with "no launch template"; a primary running on kimi must pin `config/crew-harness` to a verified adapter.
+Its primary watcher supervision renders the generic unknown-harness fallback block until a kimi snippet is verified and recorded under `docs/supervision-protocols/`.
+
 For stuck recovery, the target window's harness is recorded as `harness=` in `state/<id>.meta`.
 Use that value for interrupt, exit, resume, and skill-invocation facts.
 
