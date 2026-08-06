@@ -147,13 +147,20 @@ status_is_paused_or_captain_held() {  # <status-line>
 # --- done: is not a completion without the PR that proves delivery ----------
 #
 # A crew's `done:` line is prose it writes about its own commit, and no reader
-# can tell "landed" from "committed locally" out of that prose alone. Six
+# can tell "landed" from "committed locally" out of that prose alone. Seven
 # sessions ended that way - hero-studio-restore, ci-merge-group-trigger and a
 # third on 2026-07-31, then call-sales-script, tg-pricelist-capture and
 # call-sales-script again on 2026-08-06 - each time firstmate read `done:`,
 # closed the task, and told the captain it had shipped. The costliest left
 # branch fm/call-sales-prepayment never pushed to origin at all: the work
 # existed only in the worker's worktree.
+#
+# The seventh is the one that settles the argument: the crew that WROTE this
+# section finished it and reported `done:` on its own commit, with no PR, on the
+# same day it had just read all six earlier cases and written the refusal text
+# below. Knowing the rule, having just implemented the rule, is not enough - the
+# word `done` attaches to whatever the worker just finished. Memory does not
+# hold this for anyone, so only a machine test can.
 #
 # bin/fm-brief.sh already states the correct order in prose, so wording was
 # never the missing piece; the worker sees the word `done` and applies it to
@@ -221,7 +228,7 @@ status_done_is_unbacked() {  # <status-line> <mode>
 # next action. The two PR modes fail differently and need different next steps:
 # under no-mistakes an unbacked done: is the crew's INTERMEDIATE
 # implementation-committed report (bin/fm-brief.sh gives that gate the same word),
-# which is exactly the line the six incidents mistook for completion; under
+# which is exactly the line every one of those incidents mistook for completion; under
 # direct-PR the crew owns the push and the PR itself, so nothing may have left
 # its worktree.
 fm_unbacked_done_reason() {  # <mode>

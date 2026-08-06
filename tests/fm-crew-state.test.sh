@@ -1118,7 +1118,7 @@ SH
 }
 
 # (g'') a done: line with no PR link is NOT a completion in a PR-delivering mode.
-# Six sessions closed on exactly this line - three on 2026-07-31
+# Seven sessions closed on exactly this line - three on 2026-07-31
 # (hero-studio-restore, ci-merge-group-trigger, one more) and three on 2026-08-06
 # (call-sales-script, tg-pricelist-capture, call-sales-script again) - the worst
 # leaving fm/call-sales-prepayment unpushed while the task was reported shipped.

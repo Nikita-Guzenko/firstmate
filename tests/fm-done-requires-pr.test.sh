@@ -2,14 +2,19 @@
 # tests/fm-done-requires-pr.test.sh - behavior tests for the rule that a `done:`
 # line is not a completion without the PR that proves delivery.
 #
-# Six sessions ended with a crew appending `done:` for work that had no PR:
+# Seven sessions ended with a crew appending `done:` for work that had no PR:
 # hero-studio-restore, ci-merge-group-trigger and a third on 2026-07-31, then
 # call-sales-script, tg-pricelist-capture and call-sales-script again on
 # 2026-08-06. Each time firstmate read the line, closed the task, and reported it
 # to the captain; the costliest left branch fm/call-sales-prepayment unpushed, so
 # the change existed only in the worker's worktree. bin/fm-brief.sh already
-# stated the correct order in prose before all six, which is why the fix is a
+# stated the correct order in prose before all of them, which is why the fix is a
 # machine test rather than more wording.
+#
+# The seventh case is the one to keep in mind while reading these tests: the crew
+# that wrote this file did it too, hours after implementing the refusal, on its
+# own unpushed commit. Knowing the rule does not stop the word `done` from
+# attaching to whatever you just finished, so the check has to be mechanical.
 #
 # These cases drive the real classifier and the real drain script:
 #   (a) the predicate itself, over every delivery mode and every near-miss claim
