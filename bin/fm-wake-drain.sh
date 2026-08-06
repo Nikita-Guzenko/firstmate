@@ -79,6 +79,53 @@ EOF
   fi
 }
 
+# Print the REJECTED DONE section: every task whose last status line claims done
+# in a PR-delivering mode without a PR URL (fm-classify-lib.sh's
+# "done: is not a completion without the PR" section owns that test). Runs on
+# every drain, including the empty-queue fast path, exactly like OPEN DECISIONS
+# above and for the same reason: the rejection stays true until the crew actually
+# opens the PR, so it must keep re-surfacing rather than being seen once and
+# forgotten. This is also how the crew learns within one wake instead of an hour -
+# each entry carries the ready-to-send steer, so the supervisor relays the refusal
+# on the same turn the drain prints it.
+# Bounded and silent: prints nothing when no task is in that state, the common case.
+print_rejected_done_section() {
+  local rows task mode line entry
+  local output='' used=0 shown=0 omitted=0 bytes item_bytes=400 global_bytes=4000
+
+  rows=$(scan_unbacked_done "$STATE") || return 0
+  [ -n "$rows" ] || return 0
+
+  while IFS=$(printf '\t') read -r task mode line; do
+    [ -n "$task" ] || continue
+    entry="$task (mode=$mode) reported: $line"
+    if [ ${#entry} -gt "$item_bytes" ]; then
+      entry="${entry:0:$((item_bytes - 12))} [truncated]"
+    fi
+    entry="$entry
+  $(fm_unbacked_done_reason "$mode")
+  steer: bin/fm-send.sh fm-$task '<the refusal above, in one line>'"
+    bytes=$(( ${#entry} + 1 ))
+    if [ $((used + bytes)) -gt "$global_bytes" ]; then
+      omitted=$((omitted + 1))
+      continue
+    fi
+    output="$output$entry
+"
+    used=$((used + bytes))
+    shown=$((shown + 1))
+  done <<EOF
+$rows
+EOF
+
+  [ "$shown" -gt 0 ] || [ "$omitted" -gt 0 ] || return 0
+  printf 'REJECTED DONE (a done: line with no PR link is NOT a completion - do not close these tasks):\n'
+  printf '%s' "$output"
+  if [ "$omitted" -gt 0 ]; then
+    printf 'REJECTED DONE: %d more omitted (byte cap)\n' "$omitted"
+  fi
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
@@ -102,6 +149,7 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   : > "$FM_WAKE_QUEUE"
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
+  (print_rejected_done_section) || true
   (print_open_decisions_section) || true
   assert_watcher_liveness
   exit 0
@@ -131,6 +179,7 @@ DRAIN_LOCK_HELD=false
 # Raw output and queue deletion are authoritative. Everything below is
 # best-effort and cannot restore, duplicate, hide, or fail the consumed rows.
 (fm_wake_print_annotations "$RAW_ROWS") || true
+(print_rejected_done_section) || true
 (print_open_decisions_section) || true
 assert_watcher_liveness
 exit 0

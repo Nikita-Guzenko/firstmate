@@ -144,6 +144,129 @@ status_is_paused_or_captain_held() {  # <status-line>
   [ "$verb" = "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" ]
 }
 
+# --- done: is not a completion without the PR that proves delivery ----------
+#
+# A crew's `done:` line is prose it writes about its own commit, and no reader
+# can tell "landed" from "committed locally" out of that prose alone. Six
+# sessions ended that way - hero-studio-restore, ci-merge-group-trigger and a
+# third on 2026-07-31, then call-sales-script, tg-pricelist-capture and
+# call-sales-script again on 2026-08-06 - each time firstmate read `done:`,
+# closed the task, and told the captain it had shipped. The costliest left
+# branch fm/call-sales-prepayment never pushed to origin at all: the work
+# existed only in the worker's worktree.
+#
+# bin/fm-brief.sh already states the correct order in prose, so wording was
+# never the missing piece; the worker sees the word `done` and applies it to
+# what it just finished. This section is the ONE owner of the machine test that
+# separates the two, so no supervision surface can render an unbacked `done:` as
+# a completion. It ADDS a condition to the existing classification and changes
+# no verb, no absorb rule, and nothing about paused/blocked/needs-decision.
+#
+# The rule is scoped by the task's recorded delivery mode (state/<id>.meta
+# mode=), because only PR-delivering modes can carry that proof:
+#   no-mistakes, direct-PR - a `done:` must carry the PR URL.
+#   local-only             - lands on a local branch and has no PR by design.
+#   scout, secondmate, absent mode - no delivery contract; never constrained.
+# An unrecognized or missing mode is deliberately NOT constrained: a false
+# refusal on a scout report or a charter would be a worse failure than the one
+# this closes, and every ship task's mode is written by bin/fm-spawn.sh.
+FM_CLASSIFY_PR_DELIVERY_MODES_DEFAULT='no-mistakes direct-PR'
+
+# The PR/MR URL shape that counts as proof. Deliberately narrow: a full https
+# URL ending in the forge's numbered pull-request path, for the two forges
+# bin/fm-pr-check.sh watches (GitHub pull requests, GitLab merge requests). A
+# bare "#123", a branch name, or the words "PR opened" are not proof and must
+# not pass.
+FM_CLASSIFY_PR_URL_RE_DEFAULT='https://[^[:space:]]+/(pull|merge_requests)/[0-9]+'
+
+# Compact marker prefixed to a rendered unbacked done: line, so a supervisor
+# scanning any surface sees the refusal in the same glance as the line.
+FM_CLASSIFY_UNBACKED_DONE_MARK='DONE REJECTED (no PR link)'
+
+# 0 if a status line carries a full PR/MR URL. Pure read of the line.
+status_line_has_pr_url() {  # <status-line>
+  [ -n "$1" ] || return 1
+  printf '%s' "$1" | grep -qiE "${FM_CLASSIFY_PR_URL_RE:-$FM_CLASSIFY_PR_URL_RE_DEFAULT}"
+}
+
+# 0 if <mode> is a delivery mode whose done: must be backed by a PR.
+mode_requires_pr() {  # <mode>
+  local mode=$1 candidate
+  [ -n "$mode" ] || return 1
+  for candidate in ${FM_CLASSIFY_PR_DELIVERY_MODES:-$FM_CLASSIFY_PR_DELIVERY_MODES_DEFAULT}; do
+    [ "$mode" = "$candidate" ] && return 0
+  done
+  return 1
+}
+
+# The task's recorded delivery mode, or empty when unrecorded/unreadable.
+# Same last-wins key read bin/fm-crew-state.sh uses on the same file.
+task_delivery_mode() {  # <state> <id>
+  local meta="$1/$2.meta"
+  [ -f "$meta" ] && [ -r "$meta" ] && [ ! -L "$meta" ] || return 0
+  grep '^mode=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+# 0 when a status line claims done in a PR-delivering mode without the PR URL.
+# THE condition this section adds; every consumer asks it here rather than
+# re-deriving the test.
+status_done_is_unbacked() {  # <status-line> <mode>
+  [ "$(status_line_verb "$1")" = 'done' ] || return 1
+  mode_requires_pr "$2" || return 1
+  status_line_has_pr_url "$1" && return 1
+  return 0
+}
+
+# The one refusal text, so every surface says the same thing and names the same
+# next action. The two PR modes fail differently and need different next steps:
+# under no-mistakes an unbacked done: is the crew's INTERMEDIATE
+# implementation-committed report (bin/fm-brief.sh gives that gate the same word),
+# which is exactly the line the six incidents mistook for completion; under
+# direct-PR the crew owns the push and the PR itself, so nothing may have left
+# its worktree.
+fm_unbacked_done_reason() {  # <mode>
+  case "$1" in
+    no-mistakes)
+      printf 'not a completion - the crew reported its implementation, validation has shipped no PR yet. Do not close the task or report it to the captain; instruct the crew to run /no-mistakes and expect "done: PR <url> checks green".'
+      ;;
+    *)
+      printf 'not a completion - mode=%s delivers through a PR and this line carries none, so the branch may not even be pushed. Do not close the task; steer the crew to push and open the PR, then re-report "done: PR <url>".' "$1"
+      ;;
+  esac
+}
+
+# Render a status line the way a supervisor must read it: unchanged, except an
+# unbacked done:, which is annotated with the refusal so no surface can present
+# it as a plain completion.
+status_render_line() {  # <state> <id> <status-line>
+  local mode
+  mode=$(task_delivery_mode "$1" "$2")
+  if status_done_is_unbacked "$3" "$mode"; then
+    printf '%s [%s: %s]' "$3" "$FM_CLASSIFY_UNBACKED_DONE_MARK" "$(fm_unbacked_done_reason "$mode")"
+    return 0
+  fi
+  printf '%s' "$3"
+}
+
+# Fleet-wide scan for tasks whose LAST status line is an unbacked done:.
+# Prints "<task>\t<mode>\t<line>" per offender in glob (task id) order; prints
+# nothing when none. Consumed by bin/fm-wake-drain.sh, which re-surfaces the set
+# on every drain so a rejected report cannot be missed once and then forgotten.
+scan_unbacked_done() {  # <state>
+  local state=$1 f task last mode
+  for f in "$state"/*.status; do
+    [ -e "$f" ] || continue
+    [ -L "$f" ] && continue
+    task=$(basename "$f"); task="${task%.status}"
+    last=$(last_status_line "$f")
+    [ -n "$last" ] || continue
+    mode=$(task_delivery_mode "$state" "$task")
+    status_done_is_unbacked "$last" "$mode" || continue
+    printf '%s\t%s\t%s\n' "$task" "$mode" "$last"
+  done
+  return 0
+}
+
 # --- durable keyed decisions ------------------------------------------------
 #
 # The status stream is an append-only EVENT log. Reading it last-event-wins
@@ -627,6 +750,10 @@ stale_is_terminal() {  # <window> <state>
 # catch-all backstop for a captain-relevant status the per-wake path might miss.
 # No dedup is applied here: each consumer dedupes against its own seen-state (the
 # daemon against .subsuper-seen-status-*, the watcher against .seen-* signatures).
+# An unbacked done: still SURFACES here - it is work firstmate must act on - but
+# the line is rendered through status_render_line, so the refusal travels with it
+# instead of reaching a supervisor as a clean completion. The rendering is
+# deterministic, so consumer dedup signatures stay stable.
 scan_captain_relevant_statuses() {  # <state>
   local state=$1 f last task
   for f in "$state"/*.status; do
@@ -634,7 +761,7 @@ scan_captain_relevant_statuses() {  # <state>
     last=$(last_status_line "$f")
     status_is_captain_relevant "$last" || continue
     task=$(basename "$f"); task="${task%.status}"
-    printf '%s\t%s\t%s\n' "$f" "$task" "$last"
+    printf '%s\t%s\t%s\n' "$f" "$task" "$(status_render_line "$state" "$task" "$last")"
   done
   return 0
 }

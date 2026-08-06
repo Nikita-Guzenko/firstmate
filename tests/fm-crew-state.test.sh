@@ -16,6 +16,7 @@
 #   (e) cross-branch attribution: this branch's own run found via list lookup
 #   (f) no run + semantic busy                                    -> pane
 #   (g) no run + semantic idle falls to the status-log verb       -> status-log
+#   (g'') done: with no PR link in a PR-delivering mode is NOT done -> blocked
 #   (h) dead pane: no run -> unknown/none; with a run -> run-step (not the shell)
 #   (i) kind=scout skips the run lookup                           -> pane/status-log
 #   (j) torn-down worktree / missing meta                         -> unknown/none
@@ -1116,6 +1117,86 @@ SH
   pass "no timeout command uses perl bound"
 }
 
+# (g'') a done: line with no PR link is NOT a completion in a PR-delivering mode.
+# Six sessions closed on exactly this line - three on 2026-07-31
+# (hero-studio-restore, ci-merge-group-trigger, one more) and three on 2026-08-06
+# (call-sales-script, tg-pricelist-capture, call-sales-script again) - the worst
+# leaving fm/call-sales-prepayment unpushed while the task was reported shipped.
+# The helper must never hand a supervisor `state: done` for it.
+test_unbacked_done_is_not_a_completion() {
+  reset_fakes
+  local d out; d=$(new_case unbacked-done)
+  make_repo_on_branch "$d/wt" fm/feat-unbacked
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-unbacked.meta" "window=fm:fm-feat-unbacked" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=no-mistakes"
+  printf 'done: implemented the fix and committed on fm/feat-unbacked\n' > "$d/state/feat-unbacked.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-unbacked
+  out=$(run_crew_state "$d" feat-unbacked)
+  assert_not_contains "$out" "state: done" "a done: with no PR link must never report done"
+  assert_contains "$out" "state: blocked" "an unbacked done: reports blocked so firstmate acts"
+  assert_contains "$out" "not a completion" "the refusal reason travels with the state"
+  # A bare "#123" and prose about a PR are not proof either.
+  printf 'done: PR #123 opened, checks green\n' > "$d/state/feat-unbacked.status"
+  out=$(run_crew_state "$d" feat-unbacked)
+  assert_not_contains "$out" "state: done" "a bare PR number is not proof of delivery"
+  # direct-PR fails the same way, with its own next action.
+  fm_write_meta "$d/state/feat-unbacked.meta" "window=fm:fm-feat-unbacked" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=direct-PR"
+  printf 'done: pushed and opened the PR\n' > "$d/state/feat-unbacked.status"
+  out=$(run_crew_state "$d" feat-unbacked)
+  assert_not_contains "$out" "state: done" "direct-PR done: with no URL must never report done"
+  assert_contains "$out" "push and open the PR" "direct-PR carries its own next action"
+  pass "a done: with no PR link is not a completion in a PR-delivering mode"
+}
+
+# The control for the case above: the same mode, the same idle crew, a real PR
+# URL - still a completion. The rule must reject only unproven claims.
+test_backed_done_still_completes() {
+  reset_fakes
+  local d out; d=$(new_case backed-done)
+  make_repo_on_branch "$d/wt" fm/feat-backed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-backed.meta" "window=fm:fm-feat-backed" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=no-mistakes"
+  printf 'done: PR https://github.com/o/r/pull/42 checks green\n' > "$d/state/feat-backed.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-backed
+  out=$(run_crew_state "$d" feat-backed)
+  assert_contains "$out" "state: done" "a done: carrying its PR URL still completes"
+  assert_contains "$out" "source: status-log" "a backed done: still renders from the status log"
+  pass "a done: carrying its PR URL still reports done"
+}
+
+# local-only has no PR by design, and a scout carries no delivery mode at all.
+# Neither may be constrained by the PR rule.
+test_non_pr_modes_keep_their_done() {
+  reset_fakes
+  local d out; d=$(new_case non-pr-modes)
+  make_repo_on_branch "$d/wt" fm/feat-local
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-local.meta" "window=fm:fm-feat-local" "worktree=$d/wt" \
+    "kind=ship" "harness=claude" "mode=local-only"
+  printf 'done: ready in branch fm/feat-local\n' > "$d/state/feat-local.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-local
+  out=$(run_crew_state "$d" feat-local)
+  assert_contains "$out" "state: done" "local-only done: without a PR is still a completion"
+  assert_not_contains "$out" "not a completion" "local-only must carry no refusal"
+
+  fm_write_meta "$d/state/scout-local.meta" "window=fm:fm-scout-local" "worktree=$d/wt" \
+    "kind=scout" "harness=claude"
+  printf 'done: the counter was never re-initialised after the migration\n' > "$d/state/scout-local.status"
+  arm_idle_record "$d/state" scout-local
+  out=$(run_crew_state "$d" scout-local)
+  assert_contains "$out" "state: done" "a scout report is a completion with no PR"
+  pass "local-only and scout done: are untouched by the PR rule"
+}
+
 # (i) kind=scout skips the run lookup entirely (its deliverable is a report).
 test_scout_skips_run_lookup() {
   reset_fakes
@@ -1344,6 +1425,9 @@ test_no_run_idle_pane_uses_keyed_log
 test_no_run_idle_pane_paused
 test_no_run_idle_pane_custom_paused_verb
 test_no_run_idle_secondmate_resolved_event_not_state
+test_unbacked_done_is_not_a_completion
+test_backed_done_still_completes
+test_non_pr_modes_keep_their_done
 test_dead_window_ignores_stale_status_log
 test_dead_window_still_reports_terminal_run_step
 test_dead_window_still_reports_active_run_step

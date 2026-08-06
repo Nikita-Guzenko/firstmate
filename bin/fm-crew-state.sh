@@ -42,7 +42,11 @@
 #   4. No run for this crew (pre-validation, or kind=scout): fall back to the
 #      recorded backend's pane busy state, then the status log's last line only
 #      when its verb maps to a recognized run-state. Decision-only events such as
-#      `resolved` never become current state or detail.
+#      `resolved` never become current state or detail. A `done:` line in a
+#      PR-delivering mode (state/<id>.meta mode=) that carries no PR URL is not a
+#      completion and reports `blocked` with its refusal instead - see
+#      fm-classify-lib.sh's "done: is not a completion without the PR" section,
+#      which owns that test and its text.
 #   5. Missing meta or torn-down worktree: report unknown · none. If no run is
 #      attributed to this crew, a dead endpoint also reports unknown · none rather
 #      than trusting a stale status log.
@@ -101,6 +105,11 @@ meta_value() {  # <key>
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
 HARNESS=$(meta_value harness)
+# The recorded delivery mode, read here so the status-log paths below can apply
+# fm-classify-lib.sh's status_done_is_unbacked test: in a PR-delivering mode a
+# done: line without a PR URL is not a completion, and must never become this
+# helper's authoritative `done` state.
+MODE=$(meta_value mode)
 [ -n "$KIND" ] || KIND=ship
 
 # A torn-down (or never-created) worktree has no current state to read.
@@ -243,6 +252,10 @@ nm_gate_findings_count() {
 }
 log_reports_ci_ready() {
   [ "$LOG_VERB" = "done" ] || return 1
+  # A CI-ready claim in a PR-delivering mode must carry the PR's own URL; prose
+  # alone ("PR ready, checks green") is the exact claim the six unbacked-done
+  # incidents were made of.
+  status_done_is_unbacked "$LOG_LINE" "$MODE" && return 1
   case "$(status_line_note "$LOG_LINE")" in
     *PR*"checks green"*|*"checks green"*PR*) return 0 ;;
     *) return 1 ;;
@@ -564,6 +577,13 @@ fi
 # the verb->state mapping (including the configurable paused verb), so reusing its
 # `unknown` verdict as the "not a state" test needs no second verb list here.
 if [ -n "$LOG_VERB" ]; then
+  # One added condition ahead of the verb mapping: an unbacked done: in a
+  # PR-delivering mode is not a completion, so it reports `blocked` (firstmate
+  # must act) carrying the refusal, never `done`. fm-classify-lib.sh's
+  # "done: is not a completion without the PR" section owns the test and the text.
+  if status_done_is_unbacked "$LOG_LINE" "$MODE"; then
+    emit blocked status-log "$(fm_unbacked_done_reason "$MODE")"
+  fi
   LOG_STATE=$(map_log_state "$LOG_LINE")
   if [ "$LOG_STATE" != unknown ]; then
     emit "$LOG_STATE" status-log "$(status_line_note "$LOG_LINE")"
