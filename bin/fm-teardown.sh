@@ -2148,7 +2148,7 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
 fi
 
 # A ship task delivered through a PR is not landed until that PR exists, and the
-# crew's own `done:` line is prose about its commit rather than proof of it. Six
+# crew's own `done:` line is prose about its commit rather than proof of it. Seven
 # sessions closed a task on such a line, the worst leaving its branch unpushed.
 # The supervision surfaces already refuse to render one as a completion
 # (fm-classify-lib.sh's "done: is not a completion without the PR" section owns
