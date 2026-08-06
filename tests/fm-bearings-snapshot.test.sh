@@ -751,7 +751,11 @@ EOF
     "harness=claude" "kind=ship" "mode=no-mistakes"
   record_claude_state "$mate/state" "done" idle
   record_claude_state "$mate/state" failed idle
-  printf 'done: complete\n' > "$mate/state/done.status"
+  # A real completion, because this fixture is mode=no-mistakes: a done: line
+  # with no PR link is not a completion at all (fm-classify-lib.sh's "done: is
+  # not a completion without the PR" section), and would render `blocked` here
+  # rather than exercising the terminal-child-state case this asserts.
+  printf 'done: PR https://github.com/o/r/pull/7 checks green\n' > "$mate/state/done.status"
   printf 'failed: stopped\n' > "$mate/state/failed.status"
   rm "$mate/state/parked.meta" "$mate/state/parked.status"
   canonical=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
