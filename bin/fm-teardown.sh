@@ -152,6 +152,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -2141,6 +2143,27 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
       FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-decision-hold.sh" verify "$ID" >/dev/null; then
     echo "REFUSED: scout task $ID has not passed the unresolved-decision completion gate." >&2
     echo "Inventory its report and any visual review through bin/fm-decision-hold.sh before teardown." >&2
+    exit 1
+  fi
+fi
+
+# A ship task delivered through a PR is not landed until that PR exists, and the
+# crew's own `done:` line is prose about its commit rather than proof of it. Six
+# sessions closed a task on such a line, the worst leaving its branch unpushed.
+# The supervision surfaces already refuse to render one as a completion
+# (fm-classify-lib.sh's "done: is not a completion without the PR" section owns
+# that test); this is the SAME rule at the irreversible step, so a task cannot be
+# closed on it either. A PR recorded in metadata by bin/fm-pr-check.sh is equally
+# good proof, so a genuinely shipped task is never refused, and `local-only`,
+# scouts, and secondmates are outside the rule by construction. `--force` bypasses
+# it like every other gate here, and still needs explicit discard authority.
+if [ "$KIND" = ship ] && [ "$FORCE" != "--force" ]; then
+  DONE_LINE=$(last_status_line "$STATE/$ID.status")
+  if status_done_is_unbacked "$DONE_LINE" "$MODE" && [ -z "$(fm_meta_get "$META" pr)" ]; then
+    echo "REFUSED: ship task $ID reported done with no PR link, and no PR is recorded for it." >&2
+    fm_unbacked_done_reason "$MODE" >&2
+    echo "" >&2
+    echo "Record the PR with bin/fm-pr-check.sh $ID <PR url> before teardown, or use --force after explicit discard approval." >&2
     exit 1
   fi
 fi
