@@ -118,9 +118,10 @@ SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trai
 # turn is running; absent when idle - verified grok 0.2.73, ASCII to avoid the
 # locale fragility of matching grok's braille spinner glyph directly). claude 2.1.224
 # dropped "esc to interrupt": a running turn shows only a spinner gerund plus a
-# U+2026 ellipsis ("✽ Sprouting…"); the done state has no ellipsis, so a letter
-# immediately before "…" is a precise still-working signal.
-BUSY_REGEX=${FM_BUSY_REGEX:-'esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]…'}
+# U+2026 ellipsis ("✽ Sprouting…"); the done state has no ellipsis. Every spinner
+# word is a gerund, so the "ing…" tail is the precise still-working signal without
+# tripping on ordinary transcript text that merely ends in "…".
+BUSY_REGEX=${FM_BUSY_REGEX:-'esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…'}
 # Always-on wake triage: most wakes during a long crew validation are benign (a
 # working: note or turn-end while a pipeline runs, a no-change heartbeat). Rather
 # than wake firstmate's LLM for each, this watcher classifies every wake in bash

@@ -40,9 +40,11 @@
 # claude 2.1.224 dropped its "esc to interrupt" footer: a running turn now shows
 # only a spinner line, a random gerund plus a U+2026 ellipsis (verified live:
 # "✽ Sprouting…", "✻ Cogitating…"). The completed state is past tense with no
-# ellipsis ("Cogitated for 4s"), so a letter immediately followed by "…" is a
-# precise still-working signal. `grep -iE` folds case, so no [A-Z] anchor helps.
-FM_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]…'
+# ellipsis ("Cogitated for 4s"). Every claude spinner word is a gerund, so the
+# "ing…" tail is the precise still-working signal; matching a bare letter before
+# "…" also tripped on ordinary transcript text ending in an ellipsis. `grep -iE`
+# folds case, so no [A-Z] anchor helps.
+FM_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…'
 
 # fm_tmux_strip_ghost: remove dim/faint (ANSI SGR 2) styled runs from one captured
 # composer line, then drop any remaining escape sequences, leaving only the plain,
@@ -182,11 +184,16 @@ fm_pane_is_busy() {  # <target>
 # "[Pasted text #N +M lines]" pill with a "paste again to expand" footer hint, and
 # DEBOUNCES its submission: the Enter that would submit it is swallowed for a window
 # that is both long and variable (~1-5s, verified live claude 2.1.224), so an
-# inline paste cannot be submitted reliably at all. A short capture-tail spans both
-# the pill and the footer. An unreadable pane is treated as no-paste (return 1).
+# inline paste cannot be submitted reliably at all. The capture is anchored to the
+# composer region (the cursor row downward) so a stale "[Pasted text #N]" pill still
+# visible up in the transcript cannot be mistaken for the live composer's contents.
+# An unreadable pane is treated as no-paste (return 1).
 fm_tmux_composer_has_paste() {  # <target>
-  local tail
-  tail=$(tmux capture-pane -p -t "$1" -S -12 2>/dev/null) || return 1
+  local cy tail
+  cy=$(tmux display-message -p -t "$1" '#{cursor_y}' 2>/dev/null) || return 1
+  case "$cy" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$cy" -gt 0 ] && cy=$((cy - 1))
+  tail=$(tmux capture-pane -p -t "$1" -S "$cy" 2>/dev/null) || return 1
   printf '%s' "$tail" | grep -qiE '\[Pasted text #[0-9]|paste again to expand'
 }
 
