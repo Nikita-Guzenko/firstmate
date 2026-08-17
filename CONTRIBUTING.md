@@ -82,6 +82,7 @@ tests/fm-send-settle.test.sh              # fm-send post-submit settle pause, tu
 tests/fm-send-popup-settle.test.sh        # fm-send pre-Enter popup-settle selection for slash commands and codex $skill invocations
 tests/fm-send-secondmate-marker.test.sh   # fm-send from-firstmate marker for kind=secondmate targets: marked vs crewmate/explicit/--key, and the exact marker byte sequence
 tests/fm-send-strict.test.sh              # fm-send strict target resolution: bare lane id did-you-mean, unset FM_HOME, unresolvable selectors, prefixless herdr pane ids, dead explicit tmux targets, and healthy fm-<id> sends
+tests/fm-send-paste-submit.test.sh        # long-steer / paste-collapse handling (incident fm-send-longmsg-loss): oversized-inline refusal, collapsed-paste discard with too-large verdict, submit confirmed by composer-clear OR pane-busy, and claude 2.1.224 NBSP-composer/ellipsis-spinner detection
 tests/fm-wake-daemon-lifecycle-e2e.test.sh # watcher + daemon lifecycle e2e: restart catch-up, batching, dedupe, stale-pane routing, and digest injection
 tests/fm-composer-ghost.test.sh           # dim-ghost stripping, ghost-only composer detection, and escape-free peek tests
 tests/fm-afk-inject-e2e.test.sh           # private-socket end-to-end test of the afk injection path (partial-input deferral, swallowed-Enter retry)
