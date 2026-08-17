@@ -11,10 +11,21 @@
 # Orca currently supports Enter and C-c only, and rejects Escape.
 #
 # Text submission is verified: the line is typed ONCE, then Enter is sent and
-# retried (Enter only, never retyped) until the target backend confirms a
-# submit or reports an inconclusive send. If a swallowed Enter is positively
-# confirmed, fm-send exits NON-ZERO so the caller knows the steer did not land
-# instead of silently leaving an unsubmitted instruction.
+# retried (Enter only, never retyped) until the target backend confirms a submit
+# or reports an inconclusive send. A submit is confirmed either by the composer
+# clearing OR by the pane starting a turn (going busy). If a swallowed Enter is
+# positively confirmed, fm-send exits NON-ZERO so the caller knows the steer did
+# not land instead of silently leaving an unsubmitted instruction.
+#
+# Long-steer guard (incident fm-send-longmsg-loss): a large or multiline burst is
+# caught by the harness's paste heuristic and collapsed into a bracketed paste
+# whose submission debounces unpredictably and cannot be driven reliably - the old
+# code raced it and silently lost the message. fm-send now REFUSES to deliver such
+# a message inline: it rejects text over FM_SEND_MAX_INLINE_CHARS (default 600) or
+# FM_SEND_MAX_INLINE_LINES (default 8) before typing anything, and the shared
+# submit core discards and reports any burst that collapses anyway. Either way the
+# caller is told to write the content to a file and send a short pointer instead,
+# which matches the "steer with short single lines" contract in AGENTS.md.
 # Submission dispatches through the target's recorded backend; the tmux adapter
 # shares its composer/submit core with the away-mode daemon via bin/fm-tmux-lib.sh.
 # Tune with FM_SEND_RETRIES (default 3) / FM_SEND_SLEEP (0.4).
@@ -220,15 +231,32 @@ else
   esac
   retries=${FM_SEND_RETRIES:-3}
   sleep_s=${FM_SEND_SLEEP:-0.4}
+  # Long-steer guard: refuse an inline message big enough to collapse into an
+  # unsubmittable paste BEFORE typing anything (deterministic; no burst reaches the
+  # pane). The shared submit core is the backstop for anything that collapses under
+  # this limit. Both point the caller at the file-plus-pointer path.
+  msg="$MARK_PREFIX$*"
+  max_chars=${FM_SEND_MAX_INLINE_CHARS:-600}
+  max_lines=${FM_SEND_MAX_INLINE_LINES:-8}
+  nchars=${#msg}
+  nlines=$(printf '%s' "$msg" | awk 'END { print NR }')
+  if [ "$nchars" -gt "$max_chars" ] || [ "${nlines:-0}" -gt "$max_lines" ]; then
+    echo "error: message too long to deliver inline to $T ($nchars chars, ${nlines:-0} lines; limit $max_chars chars / $max_lines lines). A long or multiline steer collapses into a paste the harness cannot submit reliably - write it to a file (e.g. the task's data/<id>/ directory) and send a short pointer instead. Tune with FM_SEND_MAX_INLINE_CHARS / FM_SEND_MAX_INLINE_LINES." >&2
+    exit 1
+  fi
   # Type once, submit, verify. Lenient: only a positively-confirmed swallow
   # (text still in the composer) is an error; an unreadable pane is assumed sent.
-  if ! verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MARK_PREFIX$*" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
+  if ! verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$msg" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
     echo "error: text not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
     exit 1
   fi
   case "$verdict" in
     pending)
-      echo "error: text not submitted to $T (Enter swallowed; text left in composer; tried $RESOLUTION_TRIED)" >&2
+      echo "error: text not submitted to $T (composer still holds unsubmitted text after retries; for a long or multiline message write it to a file and send a short pointer instead of pasting it inline; tried $RESOLUTION_TRIED)" >&2
+      exit 1
+      ;;
+    too-large)
+      echo "error: message not sent to $T (it collapsed into a paste the harness cannot submit reliably and was discarded; write it to a file and send a short pointer instead; tried $RESOLUTION_TRIED)" >&2
       exit 1
       ;;
     send-failed)
