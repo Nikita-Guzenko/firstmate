@@ -1,6 +1,6 @@
 ---
 name: session-start-handling
-description: Agent-only reference for resolving session-start bootstrap diagnostic lines. Use when the session-start digest prints any diagnostic line - MISSING, NEEDS_GH_AUTH, TANGLE, CREW_HARNESS_OVERRIDE, CREW_DISPATCH, FLEET_SYNC, SECONDMATE_SYNC, SECONDMATE_LIVENESS, TASKS_AXI, NUDGE_SECONDMATES, or FMX - to handle each one correctly.
+description: Agent-only reference for resolving session-start bootstrap diagnostic lines. Use when the session-start digest prints any diagnostic line - MISSING, NEEDS_GH_AUTH, TANGLE, STALE_RUN, CREW_HARNESS_OVERRIDE, CREW_DISPATCH, FLEET_SYNC, SECONDMATE_SYNC, SECONDMATE_LIVENESS, TASKS_AXI, NUDGE_SECONDMATES, or FMX - to handle each one correctly.
 user-invocable: false
 metadata:
   internal: true
@@ -25,6 +25,8 @@ Never install anything the captain has not approved in this session.
 - `TANGLE: <remediation>` - the primary checkout is stranded on a feature branch instead of its default branch; section 8 explains why this guard exists and what it protects.
   The work is safe on that branch ref; restore the primary to its default branch with the printed `git -C <root> checkout <default>`, then re-validate that branch in a proper worktree.
   This is the only sanctioned firstmate-initiated git write to the primary, and it is a non-destructive branch switch that strands nothing.
+- `STALE_RUN: <branch> parked <age> awaiting a gate response (<pr>) - answer it with: no-mistakes axi respond --action approve|fix|skip` - a no-mistakes run for this repo is parked on a human gate response and will wait indefinitely; answer it with the printed command (the captain decides the action).
+- `STALE_RUN: <branch> still running (<pr>) - if it has not advanced, verify CI directly with gh pr checks ...` - the run is mid-step and may be legitimately working; the line makes no stuck claim, so verify CI directly with `gh pr checks` before trusting a monitor that may be wedged, and inspect with `no-mistakes axi status`.
 - `CREW_HARNESS_OVERRIDE: <name>` - record and use the override silently; surface a harness fact only if it actually blocks work or the captain asks.
 - `CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>` - the optional dispatch profile file exists but failed low-cost bootstrap validation; continue with the normal fallback chain, resolve and pass the chosen fallback harness explicitly while the file remains present, fix the malformed schema, unverified harness name, unknown selector, or invalid harness/effort pair when convenient, and do not select a bad profile.
 - `CREW_DISPATCH: active config/crew-dispatch.json` - bootstrap validated the optional dispatch profile file and printed its active rules and `default:` when present.
