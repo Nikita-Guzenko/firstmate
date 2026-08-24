@@ -35,6 +35,7 @@ test_signal_passes_through_and_exits_zero() {
   err="$home/err.txt"
   (
     sleep 1
+    printf 'window=fm-demo\n' > "$home/state/demo.meta"
     printf 'done: synthetic wake\n' > "$home/state/demo.status"
   ) &
   status=0
