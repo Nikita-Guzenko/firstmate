@@ -312,9 +312,17 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
 # surfaced or intentionally absorbed, so a watcher killed mid-cycle never
 # swallows a signal.
 scan_signals() {
-  local f sig sf
+  local f sig sf id
   for f in "$STATE"/*.status "$STATE"/*.turn-ended; do
     [ -e "$f" ] || continue
+    # A signal file whose task has no .meta is an orphan: the task died without
+    # teardown (killed session, crashed harness), so nothing will ever clear the
+    # marker and it wakes firstmate on every poll forever. One such file sat here
+    # from 2026-08-14 doing exactly that. Teardown removes these correctly; only
+    # the un-torn-down path leaks, so skip rather than surface. Never delete here -
+    # the watcher is a pure read, and fm-state-sweep.sh owns removal.
+    id=$(basename "$f"); id=${id%%.*}
+    [ -f "$STATE/$id.meta" ] || continue
     sig=$(stat_sig "$f") || continue
     sf="$STATE/.seen-$(basename "$f" | tr '.' '_')"
     if [ "$sig" != "$(cat "$sf" 2>/dev/null)" ]; then
