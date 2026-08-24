@@ -94,27 +94,88 @@ test_sweep_is_idempotent_and_silent_when_clean() {
   pass "fm-state-sweep is silent and exits 0 when there is nothing to remove"
 }
 
-# fm-watch.sh must not surface a signal whose task has no .meta, or the orphan
-# wakes firstmate on every poll until someone notices (10 days, in the real case).
-# shellcheck disable=SC2016  # matching literal shell source text; must not expand
-test_watcher_skips_orphaned_signals() {
-  grep -q 'id=\$(basename "\$f"); id=\${id%%\.\*}' "$ROOT/bin/fm-watch.sh" \
-    || fail "fm-watch.sh scan_signals no longer derives the task id from the signal file"
-  grep -q '\[ -f "\$STATE/\$id.meta" \] || continue' "$ROOT/bin/fm-watch.sh" \
-    || fail "fm-watch.sh scan_signals no longer skips signals whose task has no .meta"
-  pass "fm-watch.sh ignores signal files whose task has no .meta"
+# Wait up to <limit> 0.1s ticks for <pid> to exit; 0 if it exited, 1 if still alive.
+wait_for_exit() {
+  local pid=$1 limit=${2:-40} i=0
+  while [ "$i" -lt "$limit" ]; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  return 1
 }
 
-# Teardown owns removal on the happy path; the sweep only backstops crashes.
-# shellcheck disable=SC2016  # matching literal shell source text; must not expand
+reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
+
+# fm-watch.sh's per-wake scan_signals must not surface a signal whose task has no
+# .meta, or the orphan wakes firstmate on every poll until someone notices (10 days,
+# in the real case). Drive a real watcher against a fixture that carries an orphaned
+# .status AND .turn-ended (both captain-relevant-shaped) alongside one live task with
+# a .meta, and assert only the live task's signal reaches the durable wake queue.
+test_watcher_skips_orphaned_signals() {
+  local home state out pid drain
+  home="$TMP_ROOT/home-watch"
+  state="$home/state"
+  mkdir -p "$state"
+
+  # Orphan: no .meta, so nothing will ever clear these markers.
+  printf 'blocked: no perms\n' > "$state/orphan.status"
+  : > "$state/orphan.turn-ended"
+  # Live task: has a .meta, and a captain-relevant status the watcher MUST surface.
+  printf 'window=fm-live\n' > "$state/live-task.meta"
+  printf 'done: PR https://example.test/pr/7\n' > "$state/live-task.status"
+
+  out="$home/watch.out"
+  FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$ROOT/bin/fm-watch.sh" > "$out" 2>&1 &
+  pid=$!
+  # The live task's captain-relevant signal surfaces and exits the watcher; the
+  # orphan must never do so.
+  wait_for_exit "$pid" 60 || { reap "$pid"; fail "watcher never surfaced the live task's signal: $(cat "$out")"; }
+
+  drain=$(FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-wake-drain.sh" 2>/dev/null || true)
+  assert_contains "$drain" "live-task.status" "watcher did not queue the live task's captain-relevant signal"
+  assert_not_contains "$drain" "orphan.status" "watcher queued an orphaned (meta-less) .status signal"
+  assert_not_contains "$drain" "orphan.turn-ended" "watcher queued an orphaned (meta-less) .turn-ended signal"
+
+  pass "fm-watch.sh surfaces a live task's signal but never an orphan whose task has no .meta"
+}
+
+# Teardown owns removal on the happy path; the sweep only backstops crashes. Run a
+# real fm-teardown.sh against a fixture seeded with the three bookkeeping files and
+# assert they are gone afterward - a scout task with --force reaches the state-file
+# cleanup without needing a live worktree or backend.
 test_teardown_cleans_watcher_bookkeeping() {
-  grep -q '\.seen-\${ID}_status' "$ROOT/bin/fm-teardown.sh" \
-    || fail "fm-teardown.sh no longer removes .seen-<id>_status"
-  grep -q '\.seen-\${ID}_turn-ended' "$ROOT/bin/fm-teardown.sh" \
-    || fail "fm-teardown.sh no longer removes .seen-<id>_turn-ended"
-  grep -q '\.hb-surfaced-\$ID' "$ROOT/bin/fm-teardown.sh" \
-    || fail "fm-teardown.sh no longer removes .hb-surfaced-<id>"
-  pass "fm-teardown.sh removes the watcher bookkeeping it creates"
+  local home state out
+  home="$TMP_ROOT/home-teardown"
+  state="$home/state"
+  mkdir -p "$state" "$home/data/gone-task"
+
+  fm_write_meta "$state/gone-task.meta" \
+    "window=fm-gone" \
+    "worktree=$home/nonexistent-wt" \
+    "project=$home/nonexistent-proj" \
+    "harness=echo" \
+    "kind=scout" \
+    "backend=tmux"
+  : > "$state/gone-task.status"
+  : > "$state/gone-task.turn-ended"
+  : > "$state/.seen-gone-task_status"
+  : > "$state/.seen-gone-task_turn-ended"
+  : > "$state/.hb-surfaced-gone-task"
+
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_DATA_OVERRIDE="$home/data" FM_CONFIG_OVERRIDE="$home/config" \
+    "$ROOT/bin/fm-teardown.sh" gone-task --force 2>&1) \
+    || fail "fm-teardown.sh exited non-zero: $out"
+
+  assert_absent "$state/.seen-gone-task_status" "teardown left .seen-<id>_status behind"
+  assert_absent "$state/.seen-gone-task_turn-ended" "teardown left .seen-<id>_turn-ended behind"
+  assert_absent "$state/.hb-surfaced-gone-task" "teardown left .hb-surfaced-<id> behind"
+  # The task's own state files must also be gone (sanity that teardown really ran).
+  assert_absent "$state/gone-task.meta" "teardown did not remove the task meta"
+
+  pass "fm-teardown.sh removes the .seen-*/.hb-surfaced-* bookkeeping it creates"
 }
 
 test_sweep_removes_orphans_and_spares_live_tasks
