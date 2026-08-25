@@ -16,15 +16,15 @@ test_stow_skill_task_note_contract() {
   pass "stow skill task-note contract includes recoverable body archival"
 }
 
-test_agents_backlog_task_note_contract() {
-  local agents="$ROOT/AGENTS.md"
+test_task_lifecycle_backlog_note_contract() {
+  local lifecycle="$ROOT/.agents/skills/task-lifecycle/SKILL.md"
 
-  assert_grep 'tasks-axi show <id> --full' "$agents" "AGENTS.md does not require inspecting task notes first"
-  assert_grep 'tasks-axi update <id> --body-file <path>' "$agents" "AGENTS.md does not require task body replacement"
-  assert_grep '--archive-body' "$agents" "AGENTS.md does not document recoverable task body archival"
-  assert_no_grep 'carry that context into the replacement body' "$agents" "AGENTS.md still preserves archive-only context in the replacement body"
-  pass "AGENTS.md task-note contract includes recoverable body archival"
+  assert_grep 'tasks-axi show <id> --full' "$lifecycle" "task-lifecycle does not require inspecting task notes first"
+  assert_grep 'tasks-axi update <id> --body-file <path>' "$lifecycle" "task-lifecycle does not require task body replacement"
+  assert_grep '--archive-body' "$lifecycle" "task-lifecycle does not document recoverable task body archival"
+  assert_no_grep 'carry that context into the replacement body' "$lifecycle" "task-lifecycle still preserves archive-only context in the replacement body"
+  pass "task-lifecycle task-note contract includes recoverable body archival"
 }
 
 test_stow_skill_task_note_contract
-test_agents_backlog_task_note_contract
+test_task_lifecycle_backlog_note_contract
