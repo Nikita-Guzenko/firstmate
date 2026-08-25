@@ -518,6 +518,18 @@ teardown_treehouse_return() {
 
   lock=$(worktree_git_lock_path "$dir") || lock=""
   if [ -z "$lock" ] || [ ! -e "$lock" ]; then
+    # No git lock explains the failure, so treat it as a transient pool flake:
+    # on 2026-08-25 two returns (waystory-pwa slots 1 and 3) failed here with no
+    # lock present and succeeded immediately on a manual retry moments later
+    # (likely racing the killed crew processes' exit inside the worktree). One
+    # brief retry before surfacing the failure to the caller.
+    echo "teardown: $label return failed with no git lock present; waiting ${STALE_WORKTREE_LOCK_RETRY_WAIT_SECS}s and retrying once (transient pool flake)" >&2
+    sleep "$STALE_WORKTREE_LOCK_RETRY_WAIT_SECS"
+    if ( cd "$cd_dir" && treehouse return --force "$dir" ); then
+      echo "teardown: $label return succeeded on no-lock retry" >&2
+      return 0
+    fi
+    echo "teardown: $label return still failing with no git lock; run manually from $cd_dir: treehouse return --force $dir" >&2
     return 1
   fi
 
