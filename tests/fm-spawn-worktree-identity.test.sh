@@ -20,6 +20,7 @@ eval "$(sed -n '/^spawn_path_is_project_worktree() {/,/^}/p' "$SPAWN")"
 type spawn_path_is_project_worktree >/dev/null 2>&1 \
   || fail "could not extract spawn_path_is_project_worktree from $SPAWN"
 
+# shellcheck disable=SC2119  # intentional: rely on fm_git_identity's default identity
 fm_git_identity
 
 # Layout: an origin, a project clone, a linked worktree of the clone, an
