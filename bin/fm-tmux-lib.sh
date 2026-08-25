@@ -44,7 +44,14 @@
 # "ing…" tail is the precise still-working signal; matching a bare letter before
 # "…" also tripped on ordinary transcript text ending in an ellipsis. `grep -iE`
 # folds case, so no [A-Z] anchor helps.
-FM_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…'
+# claude >=2.1.x additionally alternates its spinner hint, so mid-turn panes often
+# show ONLY the telemetry status "✻ Verbing… (12s · ↓ 148 tokens)" - which may lack
+# even the "ing…" tail (the spinner word can be truncated) with no esc hint at all
+# (verified live 2026-08-25, Claude Code 2.1.196: every fm-send to such a pane
+# misread the cursor's spinner line as pending composer text). The parenthesized
+# "↓ N tokens" counter is the stable machine signature of that spinner line -
+# transcript lines do not carry it - so match it as busy too.
+FM_TMUX_BUSY_REGEX_DEFAULT='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…|\([^)]*↓ [0-9][0-9.,]*k? tokens\)'
 
 # fm_tmux_strip_ghost: remove dim/faint (ANSI SGR 2) styled runs from one captured
 # composer line, then drop any remaining escape sequences, leaving only the plain,
