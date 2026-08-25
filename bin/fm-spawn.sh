@@ -664,6 +664,29 @@ real_path_or_raw() {  # <path>
   fi
 }
 
+# Positive worktree identity: a candidate path counts as this task's worktree
+# only if git proves it belongs to the SAME repository as the project - shared
+# common dir (treehouse/git-worktree pools share the project's .git) or, as a
+# fallback for backends whose worktrees are independent clones, an identical
+# origin URL. A mere "is a git repo and differs from the primary" test is NOT
+# identity: on 2026-08-25 the pane-cwd poll below raced the pane's launcher cd
+# and captured the tmux session's initial cwd - a FOREIGN firstmate home, which
+# is itself a git repo - as the worktree, and the old negative-only validation
+# let the spawn proceed. Both the poll and validate_spawn_worktree now require
+# this positive check, so a slow pane keeps polling instead of mis-capturing.
+PROJ_COMMON_DIR=$(git -C "$PROJ_ABS" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+PROJ_ORIGIN_URL=$(git -C "$PROJ_ABS" remote get-url origin 2>/dev/null || true)
+
+spawn_path_is_project_worktree() {  # <path> -> 0 iff path is a worktree of this task's project
+  local p=$1 cdir ourl
+  cdir=$(git -C "$p" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  if [ -n "$PROJ_COMMON_DIR" ] && [ "$cdir" = "$PROJ_COMMON_DIR" ]; then
+    return 0
+  fi
+  ourl=$(git -C "$p" remote get-url origin 2>/dev/null) || return 1
+  [ -n "$PROJ_ORIGIN_URL" ] && [ "$ourl" = "$PROJ_ORIGIN_URL" ]
+}
+
 # Session-provider container-ensure + task creation. tmux stays exactly as P1
 # left it (same session-name / new-window sequence, see bin/backends/tmux.sh);
 # a herdr spawn goes through the version-gated, workspace-per-HOME,
@@ -672,25 +695,8 @@ real_path_or_raw() {  # <path>
 # herdr-sm-spaces-k4). Both branches converge on the same $T ("target") string
 # that every downstream operation (send/capture/kill) already treats as opaque
 # per-backend routing (fm_backend_resolve_selector).
-# git_common_dir_real: the physical path of <dir>'s shared git directory, or
-# empty when <dir> is not a git repository. Every worktree of a repository -
-# including a treehouse pool worktree - shares one common dir, while an
-# unrelated repository necessarily has its own, so comparing this value is a
-# naming- and path-prefix-independent proof of "belongs to the same repo".
-git_common_dir_real() {  # <dir>
-  local dir=$1 common
-  common=$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null) || return 0
-  [ -n "$common" ] || return 0
-  case "$common" in
-    /*) ;;
-    *) common="$dir/$common" ;;
-  esac
-  (cd "$common" 2>/dev/null && pwd -P) || return 0
-}
-
 validate_spawn_worktree() {  # <source> <inspect-target>
   local source=$1 inspect_target=$2 wt_real proj_real wt_top wt_top_real
-  local wt_common proj_common
   wt_real=
   if ! wt_real=$(cd "$WT" 2>/dev/null && pwd -P); then
     wt_real=
@@ -708,11 +714,10 @@ validate_spawn_worktree() {  # <source> <inspect-target>
   # The assertions above prove only that the resolved path is SOME git worktree
   # root other than the primary checkout - an unrelated repository (another
   # firstmate home's own checkout, reachable because every home shares one tmux
-  # session) passes both. Prove membership of the target project instead.
-  wt_common=$(git_common_dir_real "$wt_real")
-  proj_common=$(git_common_dir_real "$proj_real")
-  if [ -z "$wt_common" ] || [ -z "$proj_common" ] || [ "$wt_common" != "$proj_common" ]; then
-    echo "error: $source resolved '$WT', which is not a worktree of the target project '$PROJ_ABS' (shared git dir '${wt_common:-none}' vs '${proj_common:-none}'); refusing to launch into a foreign repository. Inspect target $inspect_target" >&2
+  # session) passes both. Prove membership of the target project instead, via
+  # shared git common-dir or identical origin URL.
+  if ! spawn_path_is_project_worktree "$WT"; then
+    echo "error: $source yielded '$WT', which is not a worktree of project '$PROJ_ABS' (git common-dir and origin both mismatch - see the 2026-08-25 foreign-cwd race note above spawn_path_is_project_worktree); refusing to launch. Inspect target $inspect_target" >&2
     exit 1
   fi
 }
@@ -866,9 +871,14 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # Compare against PROJ_ABS_REAL (physical), not PROJ_ABS: a symlinked project
   # prefix would otherwise make the pane's OS-level cwd read differ from
   # PROJ_ABS on the very first poll, before the pane has actually moved.
+  # Accept only a path that positively IS a worktree of this project: the pane
+  # may still be sitting in its INITIAL cwd (the tmux session default - possibly
+  # a foreign firstmate home) before its launcher cd's into the project, so
+  # "differs from the project" alone mis-captures on the first poll (2026-08-25
+  # incident; see spawn_path_is_project_worktree).
   for _ in $(seq 1 60); do
     p=$(spawn_current_path "$POLL_T" || true)
-    if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ]; then
+    if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ] && spawn_path_is_project_worktree "$p"; then
       WT="$p"
       break
     fi
