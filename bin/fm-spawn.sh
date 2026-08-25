@@ -876,7 +876,8 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # a foreign firstmate home) before its launcher cd's into the project, so
   # "differs from the project" alone mis-captures on the first poll (2026-08-25
   # incident; see spawn_path_is_project_worktree).
-  for _ in $(seq 1 60); do
+  wait_secs=${FM_SPAWN_WORKTREE_WAIT_SECS:-60}
+  for _ in $(seq 1 "$wait_secs"); do
     p=$(spawn_current_path "$POLL_T" || true)
     if [ -n "$p" ] && [ "$(real_path_or_raw "$p")" != "$PROJ_ABS_REAL" ] && spawn_path_is_project_worktree "$p"; then
       WT="$p"
@@ -885,7 +886,7 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     sleep 1
   done
   if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
+    echo "error: treehouse get did not enter a worktree within ${wait_secs}s; inspect window $T" >&2
     exit 1
   fi
 
