@@ -44,7 +44,12 @@ git clone -q "$ORIGIN" "$SECOND"
 git -C "$FOREIGN" init -q -b main 2>/dev/null || { mkdir -p "$FOREIGN" && git -C "$FOREIGN" init -q -b main; }
 git -C "$FOREIGN" commit -q --allow-empty -m foreign
 
+# PROJ_COMMON_DIR/PROJ_ORIGIN_URL are consumed by the eval-extracted
+# spawn_path_is_project_worktree as globals; shellcheck cannot see through the
+# sed/eval extraction above, hence the disables.
+# shellcheck disable=SC2034
 PROJ_COMMON_DIR=$(git -C "$PROJ" rev-parse --path-format=absolute --git-common-dir)
+# shellcheck disable=SC2034
 PROJ_ORIGIN_URL=$(git -C "$PROJ" remote get-url origin)
 
 test_linked_worktree_shares_common_dir_accepts() {
