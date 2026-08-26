@@ -153,7 +153,7 @@ Firstmate's skills live in two separate places with different audiences:
 - [docs/turnend-guard.md](docs/turnend-guard.md) - the primary session's structural "no turn ends blind" backstop: verified per-harness hook mechanisms, scoping, loop safety, and fail-open tradeoffs.
 - [docs/supervision-protocols/](docs/supervision-protocols/) - rendered primary-harness watcher protocols for Claude, Codex, OpenCode, Pi, Grok, and unknown harness fallback.
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
-- [`AGENTS.md`](AGENTS.md) - firstmate's full operating manual for the orchestrator agent.
+- [`AGENTS.md`](AGENTS.md) - firstmate's always-loaded operating core and trigger map for its internal skills.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing
