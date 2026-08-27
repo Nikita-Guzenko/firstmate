@@ -66,11 +66,24 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-export function sanitizeStatusText(value: unknown, maxLength = 88): string {
-  const text = String(value ?? "")
+function normalizeStatusText(value: unknown): string {
+  return String(value ?? "")
     .replace(/[\u0000-\u001f\u007f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function redactStatusText(value: unknown): string {
+  return normalizeStatusText(value)
+    .replace(/\b((?:[A-Z][A-Z0-9_]{2,}|[A-Za-z][A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|COOKIE|SESSION)[A-Za-z0-9_]*))\s*=\s*("[^"]*"|'[^']*'|[^\s,;)]+)/gi, "$1=[redacted]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [redacted]")
+    .replace(/\b(?:sk|pk|rk|xox[baprs]|gh[pousr]|github_pat|glpat|AIza|AKIA|ASIA)[A-Za-z0-9._-]{8,}\b/g, "[redacted-token]")
+    .replace(/\b((?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret|session|cookie|password|passwd|pwd))\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;)]+)/gi, "$1=[redacted]")
+    .replace(/(?:~|\/(?:Users|home)\/[^\s"'`,;:)]+|\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+){1,})/g, "[path]");
+}
+
+export function sanitizeStatusText(value: unknown, maxLength = 88): string {
+  const text = redactStatusText(value);
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
@@ -236,6 +249,8 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
   let aiRunning = false;
   let snapshotRunning = false;
   let stopped = false;
+  let generation = 0;
+  let aiRequest = 0;
   let primaryBusy = false;
   let primaryAction = "";
   let pulseIndex = 0;
@@ -256,6 +271,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
 
   const stop = (ctx?: ExtensionContext) => {
     stopped = true;
+    generation += 1;
     if (timer) clearInterval(timer);
     timer = undefined;
     if (aiTimeout) clearTimeout(aiTimeout);
@@ -272,17 +288,17 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
     ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, estimate, input, PULSE[pulseIndex]!)]);
   };
 
-  const startAiEstimate = (ctx: ExtensionContext, input: StatusInput, fallback: LiveStatusEstimate) => {
+  const startAiEstimate = (ctx: ExtensionContext, input: StatusInput, fallback: LiveStatusEstimate, sessionGeneration: number) => {
     if (aiRunning || !ctx.model || !ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
       if (!aiRunning) lastEstimate = fallback;
       return;
     }
     aiRunning = true;
+    const request = ++aiRequest;
     const controller = new AbortController();
     aiController = controller;
-    aiTimeout = setTimeout(() => controller.abort(), Math.max(1, interval - 100));
-    aiTimeout.unref?.();
-    void ctx.modelRegistry
+    const timeoutMs = Math.max(1, interval - 100);
+    const modelPromise = ctx.modelRegistry
       .complete(
         ctx.model,
         {
@@ -302,14 +318,25 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
           signal: controller.signal,
         },
       )
-      .then((response) => {
-        lastEstimate = parseAiStatus(responseText(response)) ?? fallback;
-        if (!stopped) ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate, input, PULSE[pulseIndex]!)]);
-      })
-      .catch(() => {
-        lastEstimate = fallback;
+      .then((response) => parseAiStatus(responseText(response)) ?? fallback)
+      .catch(() => null);
+    const timeoutPromise = new Promise<null>((resolve) => {
+      aiTimeout = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, timeoutMs);
+      aiTimeout.unref?.();
+    });
+    void Promise.race([modelPromise, timeoutPromise])
+      .then((estimate) => {
+        if (sessionGeneration !== generation || request !== aiRequest || stopped) return;
+        if (estimate) {
+          lastEstimate = estimate;
+          ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate, input, PULSE[pulseIndex]!)]);
+        }
       })
       .finally(() => {
+        if (sessionGeneration !== generation || request !== aiRequest) return;
         if (aiTimeout) clearTimeout(aiTimeout);
         aiTimeout = undefined;
         aiController = undefined;
@@ -334,7 +361,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
       const fallback = fallbackEstimate(input);
       lastInput = input;
       render(ctx, input, fallback);
-      startAiEstimate(ctx, input, fallback);
+      startAiEstimate(ctx, input, fallback, generation);
     } catch {
       if (!stopped) {
         const input: StatusInput = {
@@ -359,6 +386,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     stop();
     stopped = false;
+    generation += 1;
     markLoaded();
     if (ctx.mode !== "tui") return;
     await tick(ctx);

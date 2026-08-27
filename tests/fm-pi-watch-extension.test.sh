@@ -7,6 +7,7 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-pi-watch-extension)
 GEN="$ROOT/bin/fm-pi-watch-extension.sh"
+BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
 test_generator_writes_extension() {
   local home out file text expected_config_source version version_text marker_write
@@ -69,16 +70,72 @@ test_generator_uses_portable_mktemp_template() {
   pass "Pi extension generator uses a portable mktemp template"
 }
 
-test_spawn_template_mentions_pi_watch_placeholder() {
-  local text
-  text=$(cat "$ROOT/bin/fm-spawn.sh")
-  assert_contains "$text" "-e __PILIVE__ -e __PITURNEND__ -e __PIWATCH__" "Pi secondmate launch template does not include all primary extensions"
-  assert_contains "$text" "fm-pi-watch-extension.sh" "fm-spawn does not generate the Pi watch extension before launch"
-  assert_contains "$text" "env FM_HOME=\"\$PROJ_ABS\" FM_ROOT_OVERRIDE=\"\$PROJ_ABS\" FM_STATE_OVERRIDE= FM_DATA_OVERRIDE= FM_PROJECTS_OVERRIDE= FM_CONFIG_OVERRIDE= \"\$SCRIPT_DIR/fm-pi-watch-extension.sh\"" "fm-spawn lets primary operational overrides leak into Pi secondmate watch generation"
-  assert_contains "$text" "__PILIVE__" "fm-spawn does not replace the Pi live status extension placeholder"
-  assert_contains "$text" "__PITURNEND__" "fm-spawn does not replace the Pi turn-end guard extension placeholder"
-  assert_contains "$text" "__PIWATCH__" "fm-spawn does not replace the Pi watch extension placeholder"
-  pass "Pi secondmate launch wiring includes all primary extensions"
+make_launch_capturing_tmux() {
+  local dir=$1 fakebin="$1/fakebin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+esac
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  list-windows) exit 0 ;;
+  has-session|new-session|new-window|kill-window) exit 0 ;;
+  send-keys)
+    if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
+      prev=
+      for a in "$@"; do
+        if [ "$prev" = "-l" ]; then
+          printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
+        fi
+        prev=$a
+      done
+    fi
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  printf '%s\n' "$fakebin"
+}
+
+make_seeded_secondmate_home() {
+  local home=$1 id=$2
+  mkdir -p "$home/bin" "$home/data" "$home/.pi/extensions"
+  printf '# Firstmate\n' > "$home/AGENTS.md"
+  printf '%s\n' "$id" > "$home/.fm-secondmate-home"
+  printf 'charter\n' > "$home/data/charter.md"
+  cp "$ROOT/.pi/extensions/fm-live-status.ts" "$home/.pi/extensions/fm-live-status.ts"
+  cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$home/.pi/extensions/fm-primary-turnend-guard.ts"
+}
+
+test_spawn_launches_pi_secondmate_with_live_status_extension() {
+  local world home sm fakebin launchlog out status launch
+  world="$TMP_ROOT/pi-secondmate-spawn"
+  home="$world/home"
+  sm="$world/sm"
+  launchlog="$world/launch.log"
+  mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config"
+  make_seeded_secondmate_home "$sm" sm
+  fakebin=$(make_launch_capturing_tmux "$world/tmux")
+  : > "$launchlog"
+
+  out=$(PATH="$fakebin:$BASE_PATH" TMUX='' FM_BACKEND=tmux \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_LAUNCH_LOG="$launchlog" \
+    "$ROOT/bin/fm-spawn.sh" sm "$sm" pi --secondmate 2>&1)
+  status=$?
+  expect_code 0 "$status" "Pi secondmate spawn should succeed"$'\n'"$out"
+
+  launch=$(cat "$launchlog")
+  assert_contains "$launch" "pi -e '$sm/.pi/extensions/fm-live-status.ts' -e '$sm/.pi/extensions/fm-primary-turnend-guard.ts' -e '$sm/state/fm-primary-pi-watch.ts'" "Pi secondmate launch did not load all required extensions in order"
+  assert_present "$sm/state/fm-primary-pi-watch.ts" "Pi secondmate spawn did not generate the watcher extension in the secondmate home"
+  pass "Pi secondmate spawn launches with live-status, turn-end, and watcher extensions"
 }
 
 test_pi_extension_reports_external_healthy_watcher() {
@@ -542,7 +599,7 @@ EOF
 test_generator_writes_extension
 test_generator_preserves_loaded_marker_when_unchanged
 test_generator_uses_portable_mktemp_template
-test_spawn_template_mentions_pi_watch_placeholder
+test_spawn_launches_pi_secondmate_with_live_status_extension
 test_pi_extension_reports_external_healthy_watcher
 test_opencode_primary_watch_plugin_static_wiring
 test_opencode_primary_watch_plugin_uses_effective_state_home
