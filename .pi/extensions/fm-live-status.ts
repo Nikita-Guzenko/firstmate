@@ -184,7 +184,7 @@ function buildInput(snapshot: FleetSnapshot, primaryBusy: boolean, primaryAction
     const current = task.current_state ?? {};
     return {
       id: task.id ?? "task",
-      title: backlog?.title ?? task.id ?? "Task",
+      title: sanitizeStatusText(backlog?.title ?? task.id ?? "Task", 90),
       state: current.state ?? "unknown",
       detail: sanitizeStatusText(
         current.detail || current.raw || task.hints?.last_event_text || backlog?.title || "",
@@ -196,7 +196,7 @@ function buildInput(snapshot: FleetSnapshot, primaryBusy: boolean, primaryAction
   const terminalCount = tasks.length - activeTasks.length;
   const primaryRecord = records.find((record) => record.state === "in_flight");
   return {
-    activeCount: activeTasks.length + (primaryBusy && activeTasks.length === 0 ? 1 : 0),
+    activeCount: activeTasks.length + (primaryBusy ? 1 : 0),
     terminalCount,
     blocked: tasks.some((task) => /^(blocked|parked|needs-decision)$/.test(task.state)),
     primaryBusy,
@@ -250,6 +250,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
   let snapshotRunning = false;
   let stopped = false;
   let generation = 0;
+  let inputGeneration = 0;
   let aiRequest = 0;
   let primaryBusy = false;
   let primaryAction = "";
@@ -288,7 +289,13 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
     ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, estimate, input, PULSE[pulseIndex]!)]);
   };
 
-  const startAiEstimate = (ctx: ExtensionContext, input: StatusInput, fallback: LiveStatusEstimate, sessionGeneration: number) => {
+  const startAiEstimate = (
+    ctx: ExtensionContext,
+    input: StatusInput,
+    fallback: LiveStatusEstimate,
+    sessionGeneration: number,
+    snapshotGeneration: number,
+  ) => {
     if (aiRunning || !ctx.model || !ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
       if (!aiRunning) lastEstimate = fallback;
       return;
@@ -329,7 +336,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
     });
     void Promise.race([modelPromise, timeoutPromise])
       .then((estimate) => {
-        if (sessionGeneration !== generation || request !== aiRequest || stopped) return;
+        if (sessionGeneration !== generation || snapshotGeneration !== inputGeneration || request !== aiRequest || stopped) return;
         if (estimate) {
           lastEstimate = estimate;
           ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate, input, PULSE[pulseIndex]!)]);
@@ -359,9 +366,10 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
       const snapshot = JSON.parse(snapshotResult.stdout) as FleetSnapshot;
       const input = buildInput(snapshot, primaryBusy, primaryAction);
       const fallback = fallbackEstimate(input);
+      const snapshotGeneration = ++inputGeneration;
       lastInput = input;
       render(ctx, input, fallback);
-      startAiEstimate(ctx, input, fallback, generation);
+      startAiEstimate(ctx, input, fallback, generation, snapshotGeneration);
     } catch {
       if (!stopped) {
         const input: StatusInput = {
@@ -374,6 +382,7 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
           tasks: [],
         };
         const fallback = fallbackEstimate(input);
+        inputGeneration += 1;
         lastInput = input;
         lastEstimate = fallback;
         render(ctx, input, fallback);

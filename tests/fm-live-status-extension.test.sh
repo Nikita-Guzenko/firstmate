@@ -131,7 +131,8 @@ const ctx = {
 mod.default(pi);
 const sessionStart = handlers.get("session_start");
 const sessionShutdown = handlers.get("session_shutdown");
-if (!sessionStart || !sessionShutdown) throw new Error("session lifecycle handlers were not registered");
+const turnStart = handlers.get("turn_start");
+if (!sessionStart || !sessionShutdown || !turnStart) throw new Error("session lifecycle handlers were not registered");
 
 await sessionStart({}, ctx);
 const marker = readFileSync(`${process.env.FM_STATE_OVERRIDE}/.pi-live-status-extension-loaded`, "utf8").trim().split("\n");
@@ -149,6 +150,14 @@ if (!rendered) {
 }
 if (!rendered.includes("1 active") || !rendered.includes("refresh 5s")) {
   throw new Error(`widget omitted active count or cadence: ${rendered}`);
+}
+await turnStart({}, ctx);
+const primaryAndWorker = widgetWrites
+  .filter((write) => Array.isArray(write.value))
+  .map((write) => write.value.join("\n"))
+  .find((text) => text.includes("2 active"));
+if (!primaryAndWorker) {
+  throw new Error(`primary busy state was not counted alongside active workers: ${JSON.stringify(widgetWrites)}`);
 }
 if (widgetWrites.some((write) => write.options !== undefined)) {
   throw new Error("widget was not placed above the editor by default");
@@ -356,7 +365,7 @@ const ctx = {
     async complete(_model, request) {
       modelCalls += 1;
       const prompt = request.messages[0].content[0].text;
-      for (const leaked of ["/home/nikita", "/Users/nikita", "sk-titleSecret123", "abc.def.ghi", "secretcookie", "ghp_hidden1234567890"]) {
+      for (const leaked of ["Read /home/nikita/app/.env", "/home/nikita", "/Users/nikita", "sk-titleSecret123", "abc.def.ghi", "secretcookie", "ghp_hidden1234567890"]) {
         if (prompt.includes(leaked)) throw new Error(`prompt leaked ${leaked}: ${prompt}`);
       }
       if (!prompt.includes("[path]") || !prompt.includes("[redacted")) throw new Error(`prompt lost redaction markers: ${prompt}`);
@@ -451,6 +460,65 @@ EOF
 status=$?
 expect_node_ok "$status" "$out" "Pi live status extension must ignore stale AI callbacks"
 pass "Pi live status extension ignores stale AI callbacks"
+
+out=$(PLUGIN="$PLUGIN" FM_STATE_OVERRIDE="$STATUS_STATE" FM_LIVE_STATUS_INTERVAL_MS=30 node --input-type=module 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const { settle, waitFor } = await import(pathToFileURL(process.env.FM_TEST_WAIT_FOR).href);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+
+const handlers = new Map();
+const widgetWrites = [];
+const resolvers = [];
+let modelCalls = 0;
+
+const pi = {
+  on(name, handler) {
+    handlers.set(name, handler);
+  },
+  async exec() {
+    return { code: 0, stdout: JSON.stringify({ backlog: { records: [] }, tasks: [] }), stderr: "" };
+  },
+};
+
+const identity = (_name, text) => text;
+const ctx = {
+  mode: "tui",
+  model: { provider: "fake", id: "same-session", contextWindow: 1000 },
+  modelRegistry: {
+    hasConfiguredAuth: () => true,
+    complete() {
+      modelCalls += 1;
+      return new Promise((resolve) => resolvers.push(resolve));
+    },
+  },
+  ui: {
+    theme: { fg: identity, bold: (text) => text },
+    setWidget(id, value) {
+      widgetWrites.push({ id, value });
+    },
+  },
+};
+
+mod.default(pi);
+await handlers.get("session_start")({}, ctx);
+await waitFor("idle model call to start", () => resolvers.length >= 1);
+await handlers.get("turn_start")({}, ctx);
+if (!widgetWrites.some((write) => Array.isArray(write.value) && write.value.join("\n").includes("1 active"))) {
+  throw new Error(`turn_start did not render primary busy state: ${JSON.stringify(widgetWrites)}`);
+}
+resolvers[0]({ content: [{ type: "text", text: '{"summary":"STALE IDLE STATUS","percent":100}' }] });
+await settle(80, "give stale same-session AI callback a chance to render");
+if (widgetWrites.some((write) => Array.isArray(write.value) && write.value.join("\n").includes("STALE IDLE STATUS"))) {
+  throw new Error(`same-session stale AI callback rendered over newer tick: ${JSON.stringify(widgetWrites)}`);
+}
+await handlers.get("session_shutdown")({}, ctx);
+if (modelCalls < 1) throw new Error("same-session stale test did not start AI");
+EOF
+)
+status=$?
+expect_node_ok "$status" "$out" "Pi live status extension must ignore stale AI from older ticks"
+pass "Pi live status extension ignores stale same-session AI callbacks"
 
 out=$(PLUGIN="$PLUGIN" FM_STATE_OVERRIDE="$STATUS_STATE" FM_LIVE_STATUS_INTERVAL_MS=30 node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
