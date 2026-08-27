@@ -1,0 +1,8 @@
+changed helper: bin/fm-pavel-status.py
+tests/fm-brief.test.sh
+tests/fm-pavel-ops.test.sh
+tests/fm-session-start.test.sh
+changed helper: bin/fm-procevent-pavel-telegram.sh
+tests/fm-brief.test.sh
+tests/fm-pavel-ops.test.sh
+tests/fm-session-start.test.sh

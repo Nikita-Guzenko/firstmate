@@ -1,0 +1,45 @@
+ok - Pavel Telegram intake is durable and deduplicated
+ok - Telegram getUpdates collector durably bridges Pavel updates
+ok - Telegram collect waits outside the Pavel state lock
+ok - Pavel Telegram collector is armed through process-event
+ok - ordinary Pavel authority creates one ready backlog task
+ok - pending task classification replays keep their contract
+ok - explicit task ids must be Pavel-owned
+ok - conversations and Pavel replies remain auditable without backlog noise
+ok - genuine business ambiguity routes to Pavel and resumes automatically
+ok - Pavel clarification resolution rejects conversations
+ok - already-classified replies resolve with source answer evidence
+ok - unknown Pavel clarification sends require reconciliation
+ok - partial Pavel clarification replays retain their answer contract
+ok - only named hard-safety boundaries route to Nikita
+ok - validated delivery is driver-owned and Pavel is notified after live proof
+ok - live verification rejects metadata head changes after landing
+ok - delivery-ready requires structured validation readiness
+ok - delivery-ready accepts head-bound default status
+ok - default readiness requires matching current head
+ok - default readiness refuses metadata-only head proof
+ok - default readiness refuses invalid Pavel dispatch metadata
+ok - default readiness accepts recorded isolated worktrees
+ok - default readiness rejects the project checkout
+ok - delivery-ready preserves the canonical PR identity
+ok - merge queue requires fresh green validation
+ok - merge queue rejects PR head changes after check
+ok - landing rejects metadata head changes after merge queue
+ok - landing requires forge-confirmed current PR head
+ok - default GitHub merge proof uses API and exact head
+ok - live payload includes Pavel clarification answers
+ok - live verification is bound to each Pavel event
+ok - direct live-completion send validates the frozen head
+ok - retry live-completion send validates the frozen head
+ok - live-completion reconciliation validates the frozen head
+ok - live notification retries reuse the durable completion text
+ok - stale completion receipts do not block newer heads
+ok - unknown live-completion receipts are bound to PR head
+ok - delivered live-completion replay reconciles notification state
+ok - interrupted Telegram sends stop for visible reconciliation instead of duplicating
+ok - retryable failures survive crashes before wake publication
+ok - retryable outbound records retain their send contract
+ok - outbound replays reject immutable contract mismatches
+ok - legacy adoption replays validate their contract
+ok - legacy paused work and an ahead clone have a read-only recovery path
+ok - Pavel operations is pinned to the verified Pi adapter
