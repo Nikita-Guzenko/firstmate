@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -40,6 +41,7 @@ export type LiveStatusEstimate = {
 
 type StatusInput = {
   activeCount: number;
+  terminalCount: number;
   blocked: boolean;
   primaryBusy: boolean;
   primaryTask: string;
@@ -54,6 +56,10 @@ type StatusInput = {
 
 const extensionFile = fileURLToPath(import.meta.url);
 const root = resolve(dirname(extensionFile), "../..");
+const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || root;
+const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
+const marker = `${state}/.pi-live-status-extension-loaded`;
+const extensionVersion = `sha256:${createHash("sha256").update(readFileSync(extensionFile)).digest("hex")}`;
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -108,7 +114,7 @@ function taskProgress(task: StatusInput["tasks"][number]): number {
 }
 
 export function fallbackEstimate(input: StatusInput): LiveStatusEstimate {
-  if (input.activeCount === 0 && !input.primaryBusy) {
+  if (input.activeCount === 0 && input.terminalCount === 0 && !input.primaryBusy) {
     return { summary: "Idle - nothing is running", percent: 100 };
   }
 
@@ -173,9 +179,12 @@ function buildInput(snapshot: FleetSnapshot, primaryBusy: boolean, primaryAction
       ),
     };
   });
+  const activeTasks = tasks.filter((task) => !/^(done|failed)$/.test(task.state));
+  const terminalCount = tasks.length - activeTasks.length;
   const primaryRecord = records.find((record) => record.state === "in_flight");
   return {
-    activeCount: tasks.length + (primaryBusy && tasks.length === 0 ? 1 : 0),
+    activeCount: activeTasks.length + (primaryBusy && activeTasks.length === 0 ? 1 : 0),
+    terminalCount,
     blocked: tasks.some((task) => /^(blocked|parked|needs-decision)$/.test(task.state)),
     primaryBusy,
     primaryTask: sanitizeStatusText(primaryRecord?.title, 90),
@@ -207,12 +216,14 @@ function renderLine(ctx: ExtensionContext, estimate: LiveStatusEstimate, input: 
   const percentColor: "success" | "warning" | "accent" =
     estimate.percent >= 100 ? "success" : input.blocked ? "warning" : "accent";
   const count = input.activeCount === 1 ? "1 active" : `${input.activeCount} active`;
+  const terminal =
+    input.terminalCount === 0 ? "" : `, ${input.terminalCount === 1 ? "1 terminal" : `${input.terminalCount} terminal`}`;
   return [
     theme.fg("accent", pulse),
     theme.fg(percentColor, theme.bold(`${estimate.percent}%`)),
     theme.fg("muted", "AI:"),
     theme.fg("text", estimate.summary),
-    theme.fg("dim", `(${count}, refresh 5s)`),
+    theme.fg("dim", `(${count}${terminal}, refresh 5s)`),
   ].join(" ");
 }
 
@@ -220,74 +231,115 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
   const interval = Math.max(250, Number(process.env.FM_LIVE_STATUS_INTERVAL_MS) || DEFAULT_INTERVAL_MS);
   const snapshotCommand = process.env.FM_LIVE_STATUS_SNAPSHOT_CMD || `${root}/bin/fm-fleet-snapshot.sh`;
   let timer: ReturnType<typeof setInterval> | undefined;
-  let controller: AbortController | undefined;
-  let running = false;
+  let aiController: AbortController | undefined;
+  let aiTimeout: ReturnType<typeof setTimeout> | undefined;
+  let aiRunning = false;
+  let snapshotRunning = false;
   let stopped = false;
   let primaryBusy = false;
   let primaryAction = "";
   let pulseIndex = 0;
   let lastEstimate: LiveStatusEstimate = { summary: "Loading live fleet status", percent: 0 };
+  let lastInput: StatusInput = {
+    activeCount: 0,
+    terminalCount: 0,
+    blocked: false,
+    primaryBusy: false,
+    primaryTask: "",
+    primaryAction: "",
+    tasks: [],
+  };
+
+  const markLoaded = () => {
+    writeFileSync(marker, `${extensionVersion}\n${process.pid}\n`);
+  };
 
   const stop = (ctx?: ExtensionContext) => {
     stopped = true;
     if (timer) clearInterval(timer);
     timer = undefined;
-    controller?.abort();
-    controller = undefined;
-    running = false;
+    if (aiTimeout) clearTimeout(aiTimeout);
+    aiTimeout = undefined;
+    aiController?.abort();
+    aiController = undefined;
+    aiRunning = false;
+    snapshotRunning = false;
     ctx?.ui.setWidget(WIDGET_ID, undefined);
   };
 
+  const render = (ctx: ExtensionContext, input = lastInput, estimate = lastEstimate) => {
+    pulseIndex = (pulseIndex + 1) % PULSE.length;
+    ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, estimate, input, PULSE[pulseIndex]!)]);
+  };
+
+  const startAiEstimate = (ctx: ExtensionContext, input: StatusInput, fallback: LiveStatusEstimate) => {
+    if (aiRunning || !ctx.model || !ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
+      if (!aiRunning) lastEstimate = fallback;
+      return;
+    }
+    aiRunning = true;
+    const controller = new AbortController();
+    aiController = controller;
+    aiTimeout = setTimeout(() => controller.abort(), Math.max(1, interval - 100));
+    aiTimeout.unref?.();
+    void ctx.modelRegistry
+      .complete(
+        ctx.model,
+        {
+          messages: [
+            {
+              role: "user",
+              content: [{ type: "text", text: aiPrompt(input) }],
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        {
+          maxTokens: 80,
+          reasoningEffort: "low",
+          cacheRetention: "none",
+          sessionId: randomUUID(),
+          signal: controller.signal,
+        },
+      )
+      .then((response) => {
+        lastEstimate = parseAiStatus(responseText(response)) ?? fallback;
+        if (!stopped) ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate, input, PULSE[pulseIndex]!)]);
+      })
+      .catch(() => {
+        lastEstimate = fallback;
+      })
+      .finally(() => {
+        if (aiTimeout) clearTimeout(aiTimeout);
+        aiTimeout = undefined;
+        aiController = undefined;
+        aiRunning = false;
+      });
+  };
+
   const tick = async (ctx: ExtensionContext) => {
-    if (stopped || running || ctx.mode !== "tui") return;
-    running = true;
-    controller = new AbortController();
+    if (stopped || ctx.mode !== "tui") return;
+    if (snapshotRunning) {
+      render(ctx);
+      return;
+    }
+    snapshotRunning = true;
     try {
       const snapshotResult = await pi.exec(snapshotCommand, [], {
         timeout: Math.min(4_000, interval),
-        signal: controller.signal,
       });
       if (snapshotResult.code !== 0) throw new Error("fleet snapshot failed");
       const snapshot = JSON.parse(snapshotResult.stdout) as FleetSnapshot;
       const input = buildInput(snapshot, primaryBusy, primaryAction);
       const fallback = fallbackEstimate(input);
-      pulseIndex = (pulseIndex + 1) % PULSE.length;
-      ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate.summary ? lastEstimate : fallback, input, PULSE[pulseIndex]!)]);
-
-      if (input.activeCount === 0 && !primaryBusy) {
-        lastEstimate = fallback;
-      } else if (ctx.model && ctx.modelRegistry.hasConfiguredAuth(ctx.model)) {
-        const response = await ctx.modelRegistry.complete(
-          ctx.model,
-          {
-            messages: [
-              {
-                role: "user",
-                content: [{ type: "text", text: aiPrompt(input) }],
-                timestamp: Date.now(),
-              },
-            ],
-          },
-          {
-            maxTokens: 80,
-            reasoningEffort: "low",
-            cacheRetention: "none",
-            sessionId: randomUUID(),
-            signal: controller.signal,
-          },
-        );
-        lastEstimate = parseAiStatus(responseText(response)) ?? fallback;
-      } else {
-        lastEstimate = fallback;
-      }
-
-      if (!stopped) {
-        ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, lastEstimate, input, PULSE[pulseIndex]!)]);
-      }
+      lastInput = input;
+      render(ctx, input, fallback);
+      startAiEstimate(ctx, input, fallback);
     } catch {
       if (!stopped) {
         const input: StatusInput = {
           activeCount: primaryBusy ? 1 : 0,
+          terminalCount: 0,
           blocked: false,
           primaryBusy,
           primaryTask: "",
@@ -295,18 +347,19 @@ export default function fmLiveStatus(pi: ExtensionAPI): void {
           tasks: [],
         };
         const fallback = fallbackEstimate(input);
-        pulseIndex = (pulseIndex + 1) % PULSE.length;
-        ctx.ui.setWidget(WIDGET_ID, [renderLine(ctx, fallback, input, PULSE[pulseIndex]!)]);
+        lastInput = input;
+        lastEstimate = fallback;
+        render(ctx, input, fallback);
       }
     } finally {
-      running = false;
-      controller = undefined;
+      snapshotRunning = false;
     }
   };
 
   pi.on("session_start", async (_event, ctx) => {
     stop();
     stopped = false;
+    markLoaded();
     if (ctx.mode !== "tui") return;
     await tick(ctx);
     timer = setInterval(() => void tick(ctx), interval);

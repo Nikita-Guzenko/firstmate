@@ -62,7 +62,7 @@ Do not substitute another harness's wait shape when resuming supervision.
 Claude and Grok use tracked background-notify cycles around `bin/fm-watch-arm.sh`.
 Codex uses bounded foreground checkpoints through `bin/fm-watch-checkpoint.sh` because Codex cannot reason while a foreground tool call is running.
 OpenCode uses `.opencode/plugins/fm-primary-watch-arm.js`, which coordinates with the turn-end guard plugin and wakes the TUI with `client.session.promptAsync`.
-Pi uses the tracked `.pi/extensions/fm-primary-turnend-guard.ts` plus a generated `state/fm-primary-pi-watch.ts` bridge created by `bin/fm-pi-watch-extension.sh`.
+Pi uses the tracked `.pi/extensions/fm-live-status.ts`, the tracked `.pi/extensions/fm-primary-turnend-guard.ts`, plus a generated `state/fm-primary-pi-watch.ts` bridge created by `bin/fm-pi-watch-extension.sh`.
 When changing any primary watcher adapter, update `docs/supervision-protocols/`, `docs/turnend-guard.md` if a shared idle or turn-end hook changed, and the relevant concise fact below.
 
 ## Launch profile axes
@@ -197,8 +197,8 @@ The firstmate PRIMARY's own `.pi/extensions/fm-primary-turnend-guard.ts` listens
 Pi's `turn_end` cannot block directly, so the primary adapter uses `pi.sendUserMessage(..., { deliverAs: "followUp" })` to force one follow-up turn when `bin/fm-turnend-guard.sh` returns 2.
 Without `deliverAs: "followUp"`, Pi rejects the send while the agent is still processing.
 Pi's primary watcher protocol also requires the generated `state/fm-primary-pi-watch.ts` bridge.
-`bin/fm-session-start.sh` creates or refreshes that bridge and reports when the live Pi session has not loaded both the turn-end guard and watcher extensions.
-When a secondmate is launched on Pi, `fm-spawn.sh --secondmate` generates the bridge in the secondmate home and launches Pi with both `-e .pi/extensions/fm-primary-turnend-guard.ts` and `-e state/fm-primary-pi-watch.ts`.
+`bin/fm-session-start.sh` creates or refreshes that bridge and reports when the live Pi session has not loaded the live-status, turn-end guard, and watcher extensions.
+When a secondmate is launched on Pi, `fm-spawn.sh --secondmate` generates the bridge in the secondmate home and launches Pi with `-e .pi/extensions/fm-live-status.ts`, `-e .pi/extensions/fm-primary-turnend-guard.ts`, and `-e state/fm-primary-pi-watch.ts`.
 
 ## grok (VERIFIED 2026-06-29, grok 0.2.73; slash-submit behavior re-verified 2026-07-03, grok 0.2.82)
 
