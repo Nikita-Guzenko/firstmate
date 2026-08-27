@@ -71,7 +71,7 @@ test_generator_uses_portable_mktemp_template() {
 }
 
 make_launch_capturing_tmux() {
-  local dir=$1 fakebin="$1/fakebin"
+  local fakebin="$1/fakebin"
   mkdir -p "$fakebin"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
