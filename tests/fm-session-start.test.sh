@@ -247,6 +247,7 @@ install_pi_turnend_extension_fixture() {
   local root=$1
   mkdir -p "$root/.pi/extensions"
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$root/.pi/extensions/fm-primary-turnend-guard.ts"
+  cp "$ROOT/.pi/extensions/fm-live-status.ts" "$root/.pi/extensions/fm-live-status.ts"
 }
 
 write_pi_watch_loaded_marker() {
@@ -261,10 +262,17 @@ write_pi_turnend_loaded_marker() {
   printf '%s\n%s\n' "$version" "$pid" > "$home/state/.pi-turnend-extension-loaded"
 }
 
+write_pi_live_status_loaded_marker() {
+  local home=$1 root=$2 pid=$3 version
+  version=$(hash_file_for_test "$root/.pi/extensions/fm-live-status.ts")
+  printf '%s\n%s\n' "$version" "$pid" > "$home/state/.pi-live-status-extension-loaded"
+}
+
 write_pi_loaded_markers() {
   local home=$1 root=$2 pid=$3
   write_pi_watch_loaded_marker "$home" "$pid"
   write_pi_turnend_loaded_marker "$home" "$root" "$pid"
+  write_pi_live_status_loaded_marker "$home" "$root" "$pid"
 }
 
 # --- context digest: absent vs empty vs present -----------------------------
@@ -618,7 +626,7 @@ EOF
   assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: pi" "pi supervision block missing"
   assert_contains "$out" "Mode: Pi extension background wake." "pi snippet missing from session start"
   assert_contains "$out" "PI_WATCH_EXTENSION: not loaded" "pi extension load diagnostic missing"
-  assert_contains "$out" "restart pi with -e $root/.pi/extensions/fm-primary-turnend-guard.ts -e $home/state/fm-primary-pi-watch.ts" "pi extension load diagnostic omits the turn-end guard extension"
+  assert_contains "$out" "restart pi with -e $root/.pi/extensions/fm-live-status.ts -e $root/.pi/extensions/fm-primary-turnend-guard.ts -e $home/state/fm-primary-pi-watch.ts" "pi extension load diagnostic omits a required extension"
   assert_present "$home/state/fm-primary-pi-watch.ts" "session start did not generate the Pi watch extension"
 
   wake_line=$(printf '%s\n' "$out" | grep -n '^WAKE QUEUE$' | head -1 | cut -d: -f1)
@@ -646,6 +654,7 @@ EOF
   marker="$home/state/.pi-watch-extension-loaded"
   printf 'stale-extension-version\n%s\n' "$holder_pid" > "$marker"
   write_pi_turnend_loaded_marker "$home" "$root" "$holder_pid"
+  write_pi_live_status_loaded_marker "$home" "$root" "$holder_pid"
   touch -t 203001010000 "$marker" 2>/dev/null || touch "$marker"
 
   out=$(FM_FAKE_HARNESS=pi run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
@@ -697,6 +706,7 @@ EOF
 
   FM_HOME="$home" FM_ROOT_OVERRIDE="$root" "$ROOT/bin/fm-pi-watch-extension.sh" >/dev/null
   write_pi_watch_loaded_marker "$home" "$holder_pid"
+  write_pi_live_status_loaded_marker "$home" "$root" "$holder_pid"
 
   out=$(FM_FAKE_HARNESS=pi run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   kill "$holder_pid" 2>/dev/null || true
@@ -724,6 +734,7 @@ EOF
   version=$(cat "$home/state/.pi-watch-extension-version")
   printf '%s\n999999\n' "$version" > "$marker"
   write_pi_turnend_loaded_marker "$home" "$root" "$holder_pid"
+  write_pi_live_status_loaded_marker "$home" "$root" "$holder_pid"
 
   out=$(FM_FAKE_HARNESS=pi run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   kill "$holder_pid" 2>/dev/null || true
