@@ -999,19 +999,22 @@ test_codex_hook_scrubs_foreign_harness_markers() {
   mark_codex_hook_root "$dir"
   cat > "$dir/bin/fm-turnend-guard.sh" <<'EOF'
 #!/usr/bin/env bash
-printf 'claude=%s pi=%s signed=%s grok=%s cursor=%s invoked=%s\n' \
+printf 'claude=%s pi=%s signed=%s grok=%s cursor=%s invoked=%s gemini=%s rovo=%s rovodev=%s omp=%s\n' \
   "${CLAUDECODE:-}" "${PI_CODING_AGENT:-}" "${FM_PI_HARNESS:-}" \
-  "${GROK_AGENT:-}" "${CURSOR_AGENT:-}" "${CURSOR_INVOKED_AS:-}"
+  "${GROK_AGENT:-}" "${CURSOR_AGENT:-}" "${CURSOR_INVOKED_AS:-}" \
+  "${GEMINI_CLI:-}" "${ATLASSIAN_AGENT_TYPE:-}" "${ROVODEV_CLI:-}" \
+  "${FM_OMP_HARNESS:-}"
 cat
 EOF
   chmod +x "$dir/bin/fm-turnend-guard.sh"
   payload='{"session_id":"nested-codex","stop_hook_active":false}'
   out=$(printf '%s' "$payload" | (
     cd "$dir" && CLAUDECODE=1 PI_CODING_AGENT=true FM_PI_HARNESS=pi-signed \
-      GROK_AGENT=1 CURSOR_AGENT=1 CURSOR_INVOKED_AS=cursor-agent bash -c "$command"
+      GROK_AGENT=1 CURSOR_AGENT=1 CURSOR_INVOKED_AS=cursor-agent GEMINI_CLI=1 \
+      ATLASSIAN_AGENT_TYPE=rovo ROVODEV_CLI=1 FM_OMP_HARNESS=omp bash -c "$command"
   ) 2>&1); status=$?
   expect_code 0 "$status" "codex hook must execute with inherited foreign harness markers"
-  assert_contains "$out" 'claude= pi= signed= grok= cursor= invoked=' \
+  assert_contains "$out" 'claude= pi= signed= grok= cursor= invoked= gemini= rovo= rovodev= omp=' \
     "codex hook passed inherited foreign harness markers to Firstmate"
   assert_contains "$out" "$payload" "codex hook lost the original payload while scrubbing markers"
   pass ".codex/hooks.json: Stop hook scrubs inherited foreign harness markers"
