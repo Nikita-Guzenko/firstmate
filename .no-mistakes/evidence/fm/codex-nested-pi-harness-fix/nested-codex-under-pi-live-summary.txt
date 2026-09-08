@@ -1,0 +1,16 @@
+Nested Codex under inherited Pi markers — live harness evidence
+Date: 2026-09-08
+Runtime: codex-cli 0.153.4
+Injected environment: PI_CODING_AGENT=true FM_PI_HARNESS=pi-signed
+Configured recovery bound: FM_CODEX_WATCH_CHECKPOINT=1
+
+Observed real codex exec transcript:
+{"type":"item.started","item":{"id":"item_6","type":"command_execution","command":"/bin/bash -lc 'bin/fm-watch-checkpoint.sh --seconds 1'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_6","type":"command_execution","command":"/bin/bash -lc 'bin/fm-watch-checkpoint.sh --seconds 1'","aggregated_output":"checkpoint: no actionable wake within 1s\n","exit_code":124,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_7","type":"agent_message","text":"Captain, foreground supervision checkpoint completed; no actionable wake arrived within 1 second."}}
+
+Behavior checks:
+foreground checkpoint result occurrences: 1
+Pi repair instruction occurrences: 0
+background watcher arm occurrences: 0
+codex exec exit: 0
