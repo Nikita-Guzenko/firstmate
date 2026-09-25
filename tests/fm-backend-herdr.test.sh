@@ -982,6 +982,18 @@ test_composer_state_codex_exact_non_faint_placeholder_text_is_pending() {
   pass "fm_backend_herdr_composer_state: exact non-faint codex placeholder text remains pending"
 }
 
+test_composer_state_codex_plain_fallback_exact_text_is_pending() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-codex-plain-fallback-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '1\n' > "$resp/1.exit"
+  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\xe2\x80\xba Ask Codex to do anything\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state herdr default:w1:p2' "$ROOT" )
+  [ "$out" = pending ] || fail "plain fallback exact text 'Ask Codex to do anything' should fail safe as pending, got '$out'"
+  pass "fm_backend_herdr_composer_state: plain fallback exact codex text remains pending"
+}
+
 test_composer_state_codex_typed_line_containing_idle_placeholder_is_pending() {
   local dir log resp fb out
   dir="$TMP_ROOT/composer-codex-typed-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1687,6 +1699,7 @@ test_composer_state_bare_prompt_below_stale_bordered_banner_wins
 test_composer_state_codex_bare_prompt_glyph_is_empty
 test_composer_state_codex_rendered_idle_placeholder_is_empty
 test_composer_state_codex_exact_non_faint_placeholder_text_is_pending
+test_composer_state_codex_plain_fallback_exact_text_is_pending
 test_composer_state_codex_typed_line_containing_idle_placeholder_is_pending
 test_composer_state_codex_faint_suggestion_is_empty
 test_composer_state_codex_non_faint_same_text_is_pending
