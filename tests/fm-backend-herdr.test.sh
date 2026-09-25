@@ -960,6 +960,28 @@ test_composer_state_codex_bare_prompt_glyph_is_empty() {
   pass "fm_backend_herdr_composer_state: a real-codex unbordered '›' prompt row reads empty"
 }
 
+test_composer_state_codex_idle_placeholder_is_empty() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-codex-idle-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\xe2\x80\xba Ask Codex to do anything\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state herdr default:w1:p2' "$ROOT" )
+  [ "$out" = empty ] || fail "the exact real-codex idle placeholder 'Ask Codex to do anything' should read empty, got '$out'"
+  pass "fm_backend_herdr_composer_state: the exact real-codex idle placeholder reads empty"
+}
+
+test_composer_state_codex_typed_line_containing_idle_placeholder_is_pending() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-codex-typed-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '\xe2\x80\xba Please Ask Codex to do anything needed here\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state herdr default:w1:p2' "$ROOT" )
+  [ "$out" = pending ] || fail "typed composer text containing the idle-placeholder phrase should remain pending, got '$out'"
+  pass "fm_backend_herdr_composer_state: typed text containing the codex idle-placeholder phrase remains pending"
+}
+
 test_composer_state_codex_faint_suggestion_is_empty() {
   local dir log resp fb out
   dir="$TMP_ROOT/composer-codex-faint-suggestion"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -1652,6 +1674,8 @@ test_composer_state_claude_unbordered_prompt_is_empty
 test_composer_state_claude_unbordered_prompt_is_pending
 test_composer_state_bare_prompt_below_stale_bordered_banner_wins
 test_composer_state_codex_bare_prompt_glyph_is_empty
+test_composer_state_codex_idle_placeholder_is_empty
+test_composer_state_codex_typed_line_containing_idle_placeholder_is_pending
 test_composer_state_codex_faint_suggestion_is_empty
 test_composer_state_codex_non_faint_same_text_is_pending
 test_wait_for_working_returns_busy_on_first_poll

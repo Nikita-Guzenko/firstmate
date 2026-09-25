@@ -678,9 +678,11 @@ fm_backend_herdr_prompt_tail_is_faint() {  # <raw-ansi-composer-row>
 #
 #   empty   - blank, a bare prompt glyph, known ghost/placeholder text
 #             ("Type a message...", verified grok 0.2.82's empty-composer
-#             placeholder), or bare-prompt tail text rendered faint in the ANSI
-#             capture (verified Codex idle suggestions such as "Run /review on
-#             my current changes" and "Find and fix a bug in @filename").
+#             placeholder, and "Ask Codex to do anything", verified Codex's
+#             idle composer placeholder), or bare-prompt tail text rendered
+#             faint in the ANSI capture (verified Codex idle suggestions such
+#             as "Run /review on my current changes" and "Find and fix a bug
+#             in @filename").
 #             Safe to treat as submitted.
 #   pending - real, unsubmitted text sits in the composer. This deliberately
 #             also covers a slash-command popup that just closed but only
@@ -699,7 +701,7 @@ fm_backend_herdr_prompt_tail_is_faint() {  # <raw-ansi-composer-row>
 FM_BACKEND_HERDR_COMPOSER_LINES=${FM_BACKEND_HERDR_COMPOSER_LINES:-20}
 # Known ghost/placeholder composer text. Extend this if another
 # herdr-verified harness needs its own idle placeholder recognized.
-FM_BACKEND_HERDR_IDLE_RE=${FM_BACKEND_HERDR_IDLE_RE:-'^Type a message\.\.\.$'}
+FM_BACKEND_HERDR_IDLE_RE=${FM_BACKEND_HERDR_IDLE_RE:-'^(Type a message\.\.\.|Ask Codex to do anything)$'}
 # Known bare (unbordered) prompt glyphs a composer row may start with: ❯
 # (claude) and › (codex) only. Generic shell-style glyphs > $ % # are still
 # recognized after a bordered composer row has already been structurally found.
