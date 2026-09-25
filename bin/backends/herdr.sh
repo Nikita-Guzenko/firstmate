@@ -635,11 +635,56 @@ fm_backend_herdr_strip_ansi() {  # <text>
 }
 
 fm_backend_herdr_prompt_tail_is_faint() {  # <raw-ansi-composer-row>
-  local raw=$1 esc
+  local raw=$1 esc rest sgr_tail sgr_params code mode faint=0 i
+  local -a sgr_codes
   esc=$'\033'
   case "$raw" in
-    *"${esc}[1m❯ ${esc}[0m${esc}[2m"*|*"${esc}[1m› ${esc}[0m${esc}[2m"*) return 0 ;;
+    *'❯'*) rest=${raw#*❯} ;;
+    *'›'*) rest=${raw#*›} ;;
+    *) return 1 ;;
   esac
+
+  # Walk from the prompt glyph to the first visible tail character while
+  # tracking faint/dim SGR state. Herdr 0.9.0 inserts background-color SGRs
+  # around the prompt, separator, and tail, so matching one contiguous escape
+  # sequence layout is not sufficient. Extended-color payloads are skipped as
+  # units: their mode value `2` means RGB color, not faint text.
+  while [ -n "$rest" ]; do
+    case "$rest" in
+      "${esc}["*)
+        sgr_tail=${rest#"${esc}["}
+        case "$sgr_tail" in
+          *m*)
+            sgr_params=${sgr_tail%%m*}
+            rest=${sgr_tail#*m}
+            ;;
+          *) return 1 ;;
+        esac
+        IFS=';' read -r -a sgr_codes <<< "$sgr_params"
+        i=0
+        while [ "$i" -lt "${#sgr_codes[@]}" ]; do
+          code=${sgr_codes[$i]}
+          case "$code" in
+            ''|0) faint=0 ;;
+            2) faint=1 ;;
+            22) faint=0 ;;
+            38|48|58)
+              i=$((i + 1))
+              mode=${sgr_codes[$i]:-}
+              case "$mode" in
+                2) i=$((i + 3)) ;;
+                5) i=$((i + 1)) ;;
+              esac
+              ;;
+          esac
+          i=$((i + 1))
+        done
+        ;;
+      ' '*) rest=${rest# } ;;
+      $'\t'*) rest=${rest#$'\t'} ;;
+      *) [ "$faint" -eq 1 ]; return ;;
+    esac
+  done
   return 1
 }
 

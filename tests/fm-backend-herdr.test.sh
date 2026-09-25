@@ -963,7 +963,9 @@ test_composer_state_codex_bare_prompt_glyph_is_empty() {
 test_composer_state_codex_rendered_idle_placeholder_is_empty() {
   local dir log resp fb out
   dir="$TMP_ROOT/composer-codex-idle-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\x1b[0m\x1b[1m\xe2\x80\xba \x1b[0m\x1b[2mAsk Codex to do anything\x1b[0m\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
+  # Verbatim Herdr 0.9.0-style SGR layout: RGB background sequences surround
+  # the prompt, separating space, and faint placeholder text.
+  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\x1b[0m\x1b[1m\x1b[48;2;44;43;43m\xe2\x80\xba\x1b[0m\x1b[48;2;44;43;43m \x1b[0m\x1b[2m\x1b[48;2;44;43;43mAsk Codex to do anything\x1b[0m\x1b[48;2;44;43;43m \r\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state herdr default:w1:p2' "$ROOT" )
@@ -974,7 +976,9 @@ test_composer_state_codex_rendered_idle_placeholder_is_empty() {
 test_composer_state_codex_exact_non_faint_placeholder_text_is_pending() {
   local dir log resp fb out
   dir="$TMP_ROOT/composer-codex-exact-non-faint-placeholder"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\x1b[0m\x1b[1m\xe2\x80\xba \x1b[0mAsk Codex to do anything\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
+  # Keep the same RGB background sequences but omit faint mode. In particular,
+  # the `2` in `48;2` must never be interpreted as faint typed text.
+  printf '\xe2\x80\xa2 You have 2 usage limit resets available.\n\n\x1b[0m\x1b[1m\x1b[48;2;44;43;43m\xe2\x80\xba\x1b[0m\x1b[48;2;44;43;43m \x1b[0m\x1b[48;2;44;43;43mAsk Codex to do anything\x1b[0m\x1b[48;2;44;43;43m \r\n\n  gpt-5.5 xhigh \xc2\xb7 Context 100%% left\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/fm-backend.sh"; fm_backend_composer_state herdr default:w1:p2' "$ROOT" )
