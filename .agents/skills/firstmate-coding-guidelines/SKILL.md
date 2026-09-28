@@ -12,8 +12,9 @@ metadata:
 # firstmate-coding-guidelines
 
 Load this before changing firstmate's shared, tracked material, as defined by `AGENTS.md` section 1.
-It exists because `AGENTS.md` grew from 585 to 958 lines between its last two restructures, entirely from conditional detail added inline instead of routed to its right home.
-Applying the rules below on every change is what keeps that from happening again.
+It exists because conditional detail repeatedly bloated the always-loaded `AGENTS.md` instead of being routed to its trigger-specific owner.
+Keep `AGENTS.md` near or below 3,000 tokens; move conditional procedures to an agent-only skill and leave only the trigger plus safety-critical always-on facts inline.
+Applying the rules below on every change prevents regression.
 
 ## Knowledge-placement decision tree
 

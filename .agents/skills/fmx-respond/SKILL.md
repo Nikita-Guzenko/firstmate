@@ -205,3 +205,26 @@ This skill's own responsibility during the mention-handling turn is linking the 
 - Never inline mention-influenced reply text into a shell command; always go through `--text-file` or stdin.
 - The reply length authority is the relay (it trims), but a tight reply is on you.
 - Never edit `bin/fm-x-poll.sh`, `bin/fm-x-reply.sh`, or the watcher to "answer faster"; the cadence is handled by the locked session-start bootstrap step.
+
+## 14. X mode
+
+X mode answers public mentions routed through the shared `@myfirstmate` relay, in firstmate's own voice, from live fleet state.
+It ships for everyone but is **inert until opted in**, so a user who never enables it sees zero behavior change.
+
+**Activation is `.env` presence.**
+Put `FMX_PAIRING_TOKEN` into a `.env` at this home's root (gitignored).
+That token is the whole consent, including standing authorization for normal reversible lifecycle actions from mentions - but not for destructive, irreversible, or security-sensitive actions, which need trusted-channel confirmation first.
+`FMX_RELAY_URL` is optional (defaults to `https://myfirstmate.io`; only a developer pointing at a local relay sets it).
+
+**Mechanism.**
+Bootstrap wires the relay poll automatically and additively from `.env` presence; see docs/configuration.md "X mode (.env)" for the generated artifacts, wire protocol, and watcher non-interference guarantee.
+
+**Cadence.**
+An X instance polls every 30s instead of 300s: `config/x-mode.env` exports `FM_CHECK_INTERVAL=30` into the watcher the harness protocol starts.
+Since `fm-watch.sh` reads it only at process start, a cadence transition (opt-in or opt-out mid-run) needs a home-scoped watcher restart via the emitted protocol; bootstrap does not restart it.
+X mode also keeps the watcher armed with no fleet work, so an X-only user is served.
+Under away-mode the daemon's default cadence applies.
+
+**Answering.**
+On an `x-mention <request_id>` or `x-mode-error ...` check wake, load `fmx-respond` - it owns classification, acting on the request, reply composition, voice, thread-splitting, images, dry-run, and follow-ups.
+One fact that must survive here (it fires on a generic terminal wake): when an X-linked task reaches a terminal state, post its final completion follow-up per section 8 before tearing down.
