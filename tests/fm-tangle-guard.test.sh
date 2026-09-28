@@ -193,6 +193,7 @@ run_spawn() {
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$pane" TMUX="fake,1,0" \
+    FM_SPAWN_WORKTREE_WAIT_SECS="${FM_SPAWN_WORKTREE_WAIT_SECS:-2}" \
     PATH="$fakebin:$PATH" \
     "$ROOT/bin/fm-spawn.sh" "$id" "$proj" codex 2>&1
 }
@@ -210,7 +211,7 @@ test_spawn_isolation_abort() {
   # Abort: the pane resolves to a plain non-git directory (not a worktree at all).
   out=$(run_spawn "$home" abort-notgit-dd4 "$proj" "$TMP_ROOT/spawn-notgit" "$fakebin"); status=$?
   expect_code 1 "$status" "spawn into a non-worktree dir should abort"
-  assert_contains "$out" "did not yield an isolated worktree" "non-worktree spawn lacked the isolation error"
+  assert_contains "$out" "did not enter a worktree" "non-worktree spawn lacked the timeout-refusal error"
   assert_absent "$home/state/abort-notgit-dd4.meta" "aborted spawn must not record meta"
 
   # Abort: the pane resolves INTO the primary checkout (a subdir of PROJ_ABS).
@@ -222,7 +223,7 @@ test_spawn_isolation_abort() {
   out=$(run_spawn "$home" ok-isolated-ff6 "$proj" "$TMP_ROOT/spawn-wt" "$fakebin"); status=$?
   expect_code 0 "$status" "spawn into a genuine isolated worktree should succeed"
   assert_contains "$out" "spawned ok-isolated-ff6" "isolated spawn did not report success"
-  assert_not_contains "$out" "did not yield an isolated worktree" "isolated spawn wrongly tripped the guard"
+  assert_not_contains "$out" "did not enter a worktree" "isolated spawn wrongly tripped the guard"
   pass "fm-spawn: aborts unless the resolved worktree is a genuine, isolated worktree"
 }
 
@@ -243,21 +244,23 @@ test_spawn_foreign_repo_abort() {
   # Abort: the pane resolves to an unrelated repository's root.
   out=$(run_spawn "$home" abort-foreign-gg7 "$proj" "$foreign" "$fakebin"); status=$?
   expect_code 1 "$status" "spawn into an unrelated repository should abort"
-  assert_contains "$out" "is not a worktree of the target project" \
-    "foreign-repo spawn lacked the membership error"
+  # The poll accepts only positive project-worktree identity, so a foreign repo
+  # is rejected there and refused via the timeout, never reaching validate_spawn_worktree.
+  assert_contains "$out" "did not enter a worktree" \
+    "foreign-repo spawn lacked the timeout-refusal error"
   assert_absent "$home/state/abort-foreign-gg7.meta" "aborted spawn must not record meta"
 
   # Abort: a linked worktree of the FOREIGN repo is still foreign.
   git -C "$foreign" worktree add -q --detach "$TMP_ROOT/foreign-other-wt" >/dev/null 2>&1
   out=$(run_spawn "$home" abort-foreignwt-hh8 "$proj" "$TMP_ROOT/foreign-other-wt" "$fakebin"); status=$?
   expect_code 1 "$status" "spawn into another repo's worktree should abort"
-  assert_contains "$out" "is not a worktree of the target project" \
-    "foreign-worktree spawn lacked the membership error"
+  assert_contains "$out" "did not enter a worktree" \
+    "foreign-worktree spawn lacked the timeout-refusal error"
 
   # Proceed: a genuine linked worktree of the target project still passes.
   out=$(run_spawn "$home" ok-member-ii9 "$proj" "$TMP_ROOT/foreign-wt" "$fakebin"); status=$?
   expect_code 0 "$status" "spawn into a worktree of the target project should succeed"
-  assert_not_contains "$out" "is not a worktree of the target project" \
+  assert_not_contains "$out" "did not enter a worktree" \
     "legitimate worktree wrongly tripped the membership guard"
   pass "fm-spawn: aborts when the resolved worktree belongs to another repository"
 }
