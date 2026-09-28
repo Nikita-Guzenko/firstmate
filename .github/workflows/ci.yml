@@ -60,3 +60,22 @@ jobs:
             printf '%s\n' "$tracked"
             exit 1
           fi
+      - name: AGENTS.md stays within its context budget
+        run: |
+          set -eu
+          # AGENTS.md loads on every session of every fleet member, so its size is a
+          # per-session cost paid whether or not a session hits the situation new lines
+          # describe. Deliberate slimming took it from ~114KB to ~56KB; this budget stops
+          # silent regrowth. Do NOT clear a failure by deleting load-bearing text: route
+          # the detail to its owner per the firstmate-coding-guidelines skill (mechanism
+          # -> bin/ script headers, reference -> docs/, situational detail -> an agent-only
+          # skill under .agents/skills/ with a one-line trigger left in AGENTS.md). Raise
+          # the budget deliberately, in its own commit, only when the added lines genuinely
+          # must be resident on every turn.
+          budget=60000
+          size=$(wc -c < AGENTS.md)
+          if [ "$size" -gt "$budget" ]; then
+            echo "::error file=AGENTS.md::AGENTS.md is ${size} bytes, over the ${budget}-byte context budget (over by $((size - budget))). Route detail to bin/ headers, docs/, or an agent-only skill instead of deleting it; see the firstmate-coding-guidelines skill."
+            exit 1
+          fi
+          echo "AGENTS.md ${size}/${budget} bytes ($((budget - size)) headroom)"

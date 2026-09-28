@@ -55,6 +55,7 @@ If an addition needs more than a few lines of conditional detail (detail that ma
 `AGENTS.md`'s token cost is paid by every session of every fleet member, every time, whether or not that session ever hits the situation the new lines describe.
 A skill's cost is paid only by the sessions that actually load it.
 When in doubt, write the fact into the skill or doc first, and add only the one-line trigger to `AGENTS.md`.
+This is enforced in CI: the `Repo invariants` job in `.github/workflows/ci.yml` fails the build when `AGENTS.md` exceeds its byte budget, and that step owns the budget value and the rule for raising it deliberately in its own commit.
 
 ## Trigger hygiene
 
