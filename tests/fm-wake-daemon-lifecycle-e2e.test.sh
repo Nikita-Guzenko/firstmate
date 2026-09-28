@@ -58,6 +58,8 @@ test_routine_then_terminal_after_restart() {
   drain_out="$dir/drain.out"
   status_file="$state/task-w1.status"
 
+  # A live task always has a .meta; without one the orphan guard skips its signal.
+  printf 'window=test:fm-task-w1\nkind=ship\n' > "$state/task-w1.meta"
   # A routine status fires a signal; the watcher queues it and exits.
   printf 'working: building\n' > "$status_file"
   run_watcher_once "$state" "$fakebin" "$out" || fail "watcher did not exit for the routine signal"

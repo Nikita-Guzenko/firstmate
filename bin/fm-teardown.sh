@@ -1043,6 +1043,12 @@ remove_grok_turnend_auth "$STATE" "$ID"
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
 [ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
 rm -f "$STATE/$ID.status" "$STATE/$ID.turn-ended" "$STATE/$ID.check.sh" "$STATE/$ID.meta" "$STATE/$ID.pi-ext.ts" "$STATE/$ID.grok-turnend-token"
+# The watcher's per-signal bookkeeping is named after the signal FILE with dots
+# mapped to underscores (fm-watch.sh scan_signals: .seen-<id>_status), and the
+# heartbeat backstop adds .hb-surfaced-<id>. Neither was removed here, so every
+# task ever run left permanent residue that scan_signals stats on every poll -
+# 756 such files had accumulated in one home before this was noticed.
+rm -f "$STATE/.seen-${ID}_status" "$STATE/.seen-${ID}_turn-ended" "$STATE/.hb-surfaced-$ID"
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
