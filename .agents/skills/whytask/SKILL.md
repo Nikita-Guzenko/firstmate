@@ -16,7 +16,8 @@ Do not repeat implementation detail unless it changes the value or success crite
 
 1. If the invocation includes a task ID, use that task.
 2. Otherwise, use the task explicitly discussed in the user's message or the immediately preceding conversation.
-3. Otherwise, list in-flight tasks with `tasks-axi list --state in_flight`.
+3. Otherwise, list in-flight tasks with `tasks-axi list --state in_flight` when the default backend is active and compatible.
+   If the home uses the manual backend or `tasks-axi` is unavailable or incompatible, read the `## In flight` section of `data/backlog.md` instead.
 4. If exactly one task is in flight, use it.
 5. If the target is still ambiguous, ask one concise question naming the candidate task IDs.
 
@@ -26,11 +27,13 @@ Never guess between multiple plausible tasks.
 
 Read the minimum evidence needed in this order:
 
-1. `tasks-axi show <id> --full` for the durable backlog record.
+1. `tasks-axi show <id> --full` for the durable backlog record when the default backend is active and compatible, or the matching item in `data/backlog.md` otherwise.
+   If the active backlog does not contain the task, search `data/done-archive.md` before treating its ID as missing.
 2. `data/<id>/brief.md` when it exists for the goal, constraints, and acceptance criteria.
-3. `bin/fm-crew-state.sh <id>` and `state/<id>.status` only when current progress changes what remains for success.
+3. `bin/fm-crew-state.sh <id>` only when current progress changes what remains for success.
 4. `data/<id>/report.md` or a recorded PR only when the task is already complete or awaiting acceptance.
 
+Treat `state/<id>.status` as historical event evidence only, never as current state or current blocker evidence.
 Do not infer purpose from the task title alone when a brief or backlog body exists.
 Do not run project code, inspect broad diffs, dispatch work, steer a crewmate, merge a PR, or mutate backlog, task, fleet, provider, or project state.
 
