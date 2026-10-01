@@ -32,6 +32,9 @@ case "${1:-}" in
       for a in "$@"; do
         if [ "$prev" = "-l" ]; then
           printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
+          if [ "${FM_FAKE_EXEC_LITERALS:-0}" = 1 ]; then
+            bash -c "$a" || exit $?
+          fi
         fi
         prev=$a
       done
@@ -42,6 +45,13 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  cat > "$fakebin/codex" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -n "${FM_FAKE_CODEX_ARGV_LOG:-}" ] || exit 0
+printf '%s\0' "$@" > "$FM_FAKE_CODEX_ARGV_LOG"
+SH
+  chmod +x "$fakebin/codex"
   fm_fake_exit0 "$fakebin" treehouse
   printf '%s\n' "$fakebin"
 }
@@ -84,11 +94,13 @@ run_spawn() {
   local home=$1 wt=$2 fakebin=$3 launchlog=$4
   shift 4
   : > "$launchlog"
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+  FM_ROOT_OVERRIDE="${FM_ROOT_OVERRIDE:-}" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
-    FM_FAKE_LAUNCH_LOG="$launchlog" GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
+    FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_EXEC_LITERALS="${FM_FAKE_EXEC_LITERALS:-0}" \
+    FM_FAKE_CODEX_ARGV_LOG="${FM_FAKE_CODEX_ARGV_LOG:-}" \
+    GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
 
@@ -169,7 +181,7 @@ test_active_dispatch_profile_allows_explicit_harness() {
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex -c 'service_tier=\"default\"' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model and effort"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -225,19 +237,36 @@ test_claude_threads_model_and_effort() {
 }
 
 test_codex_threads_model_and_effort() {
-  local rec id out status launch
+  local rec id out status launch argvlog
+  local -a argv
   id=profile-codex-z3
   rec=$(make_spawn_case profile-codex codex "$id")
   read_case_record "$rec"
+  argvlog="$CASE_DIR/codex.argv"
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort high)
+  out=$(FM_FAKE_EXEC_LITERALS=1 FM_FAKE_CODEX_ARGV_LOG="$argvlog" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --model gpt-5 --effort high)
   status=$?
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex -c 'service_tier=\"default\"' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model and reasoning effort config"
-  pass "codex receives --model and model_reasoning_effort profile flags"
+  mapfile -d '' -t argv < "$argvlog"
+  [ "${#argv[@]}" -eq 10 ] || fail "codex received ${#argv[@]} arguments instead of 10"
+  [ "${argv[0]}" = -c ] && [ "${argv[1]}" = 'service_tier="default"' ] \
+    || fail "codex did not receive the default service tier as a config override"
+  [ "${argv[2]}" = --model ] && [ "${argv[3]}" = gpt-5 ] \
+    || fail "codex did not receive the selected model as a separate argument"
+  [ "${argv[4]}" = -c ] && [ "${argv[5]}" = 'model_reasoning_effort="high"' ] \
+    || fail "codex did not receive the selected reasoning effort as a config override"
+  [ "${argv[6]}" = --dangerously-bypass-approvals-and-sandbox ] \
+    || fail "codex did not receive the autonomy flag after its config overrides"
+  [ "${argv[7]}" = -c ] && [[ "${argv[8]}" == notify=* ]] \
+    || fail "codex crewmate launch did not receive its turn-end notification config"
+  [ "${argv[9]}" = "brief for $id" ] || fail "codex did not receive the brief as one argument"
+  pass "codex executes with default-tier, model, and reasoning-effort arguments"
 }
 
 test_codex_omits_invalid_max_effort() {
@@ -251,7 +280,7 @@ test_codex_omits_invalid_max_effort() {
   expect_code 0 "$status" "codex spawn with unsupported max effort should omit the effort flag"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "codex -c 'service_tier=\"default\"' --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not preserve the model flag when max effort was omitted"
   assert_not_contains "$launch" "model_reasoning_effort" "codex launch must omit unsupported max reasoning effort"
   pass "codex omits unsupported max effort instead of passing a bad config value"
@@ -347,21 +376,35 @@ test_batch_forwards_shared_profile_flags() {
 }
 
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
-  local rec id sm out status
+  local rec id sm primary_root out status argvlog
+  local -a argv
   id=profile-secondmate-z16
   rec=$(make_spawn_case profile-secondmate codex "$id")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
   sm="$CASE_DIR/secondmate-home"
+  primary_root="$CASE_DIR/primary-root"
+  mkdir -p "$primary_root"
+  ln -s "$ROOT/bin" "$primary_root/bin"
   make_seeded_secondmate_home "$sm" "$id"
+  argvlog="$CASE_DIR/codex.argv"
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  out=$(FM_ROOT_OVERRIDE="$primary_root" \
+    FM_FAKE_EXEC_LITERALS=1 FM_FAKE_CODEX_ARGV_LOG="$argvlog" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
   expect_code 0 "$status" "secondmate spawn should be exempt from the dispatch-profile explicit harness requirement"
   assert_contains "$out" "spawned $id harness=codex kind=secondmate" "secondmate launch did not use secondmate harness resolution"
   assert_grep "kind=secondmate" "$HOME_DIR/state/$id.meta" "secondmate meta missing kind=secondmate"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex default default
-  pass "active crew-dispatch profile does not block secondmate launches"
+  mapfile -d '' -t argv < "$argvlog"
+  [ "${#argv[@]}" -eq 4 ] || fail "codex secondmate received ${#argv[@]} arguments instead of 4"
+  [ "${argv[0]}" = -c ] && [ "${argv[1]}" = 'service_tier="default"' ] \
+    || fail "codex secondmate did not receive the default service tier as a config override"
+  [ "${argv[2]}" = --dangerously-bypass-approvals-and-sandbox ] \
+    || fail "codex secondmate did not receive the autonomy flag"
+  [ "${argv[3]}" = "charter for $id" ] || fail "codex secondmate did not receive the charter as one argument"
+  pass "active dispatch profile allows a default-tier codex secondmate launch"
 }
 
 test_no_profile_keeps_claude_launch_unchanged
