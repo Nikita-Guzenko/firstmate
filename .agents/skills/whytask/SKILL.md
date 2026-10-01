@@ -30,7 +30,7 @@ Read the minimum evidence needed in this order:
 1. `tasks-axi show <id> --full` for the durable backlog record when the default backend is active and compatible, or the matching item in `data/backlog.md` otherwise.
    If the active backlog does not contain the task, search `data/done-archive.md` before treating its ID as missing.
 2. `data/<id>/brief.md` when it exists for the goal, constraints, and acceptance criteria.
-3. `bin/fm-crew-state.sh <id>` for every in-flight task to establish its current progress and whether any blocker is still active.
+3. `bin/fm-crew-state.sh <id>` when the selected task is in flight to establish its current progress and whether any blocker is still active.
 4. `data/<id>/report.md` or a recorded PR only when the task is already complete or awaiting acceptance.
 
 Treat `state/<id>.status` as historical event evidence only, never as current state or current blocker evidence.
