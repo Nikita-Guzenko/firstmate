@@ -88,16 +88,19 @@ test_grok_command_sources_effective_config() {
 }
 
 test_pi_snippet_uses_effective_extension_path() {
-  local home out turnend
+  local home out turnend live_status
   home="$TMP_ROOT/pi-home"
   turnend="$ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
+  live_status="$ROOT/.pi/extensions/fm-live-status.ts"
   mkdir -p "$home/state" "$home/config"
   out=$(FM_HOME="$home" "$RENDER" --harness pi)
-  assert_contains "$out" "-e $turnend -e $home/state/fm-primary-pi-watch.ts" "pi snippet did not render both effective extension launch paths"
+  assert_contains "$out" "-e $live_status -e $turnend -e $home/state/fm-primary-pi-watch.ts" "pi snippet did not render the effective extension launch paths"
+  assert_contains "$out" "The live status extension lives at \`$live_status\`" "pi snippet did not render the live status extension path"
   assert_contains "$out" "The turn-end guard extension lives at \`$turnend\`" "pi snippet did not render the turn-end guard extension path"
   assert_contains "$out" "The generated watcher extension lives at \`$home/state/fm-primary-pi-watch.ts\`" "pi snippet did not render the effective watcher extension state path"
   assert_not_contains "$out" "__FM_PI_EXT__" "renderer leaked the Pi extension path placeholder"
   assert_not_contains "$out" "__FM_PI_TURNEND_EXT__" "renderer leaked the Pi turn-end extension path placeholder"
+  assert_not_contains "$out" "__FM_PI_LIVE_STATUS_EXT__" "renderer leaked the Pi live status extension path placeholder"
   assert_not_contains "$out" "-e state/fm-primary-pi-watch.ts" "pi snippet kept the repo-relative extension launch path"
   pass "pi supervision snippet renders the effective extension path"
 }
