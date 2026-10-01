@@ -81,28 +81,34 @@ fm_skip_without_ts_import() {
 # --- self-cleaning temp root ------------------------------------------------
 #
 # fm_test_tmproot <prefix> echoes a fresh temp dir and registers it for removal
-# on EXIT. The first call installs the cleanup trap. A test file that needs
-# extra teardown (e.g. killing a daemon) should define its own EXIT trap and
-# call fm_test_cleanup from inside it so registered dirs are still removed.
+# on EXIT. Callers normally capture the path with command substitution, so the
+# registry is a file shared with that subshell rather than in-memory state that
+# would disappear when the substitution exits. A test file that needs extra
+# teardown (e.g. killing a daemon) should define its own EXIT trap and call
+# fm_test_cleanup from inside it so registered dirs are still removed.
 
-FM_TEST_CLEANUP_DIRS=()
+FM_TEST_CLEANUP_REGISTRY=$(mktemp "${TMPDIR:-/tmp}/fm-test-cleanup.XXXXXX") \
+  || fail "could not create the test cleanup registry in ${TMPDIR:-/tmp}"
 
 fm_test_cleanup() {
   local d
-  for d in "${FM_TEST_CLEANUP_DIRS[@]:-}"; do
-    [ -n "$d" ] && rm -rf "$d"
-  done
+  while IFS= read -r d; do
+    [ -n "$d" ] && rm -rf -- "$d"
+  done < "$FM_TEST_CLEANUP_REGISTRY"
+  rm -f -- "$FM_TEST_CLEANUP_REGISTRY"
 }
 
 fm_test_tmproot() {
   local prefix=${1:-fm-test} root
   root=$(mktemp -d "${TMPDIR:-/tmp}/${prefix}.XXXXXX")
-  if [ "${#FM_TEST_CLEANUP_DIRS[@]}" -eq 0 ]; then
-    trap fm_test_cleanup EXIT
+  if ! printf '%s\n' "$root" >> "$FM_TEST_CLEANUP_REGISTRY"; then
+    rm -rf -- "$root"
+    return 1
   fi
-  FM_TEST_CLEANUP_DIRS+=("$root")
   printf '%s\n' "$root"
 }
+
+trap fm_test_cleanup EXIT
 
 # --- fakebin / PATH shims ---------------------------------------------------
 #
