@@ -512,6 +512,8 @@ Mention cost when unusually much work is running (more than ~8 concurrent jobs);
 
 Re-evaluate Queued on every teardown and heartbeat: dispatch anything whose blocker is gone and whose date gate has arrived.
 
+On `/whytask [<id>]`, load the `whytask` skill to explain the selected task's purpose, value, and observable success criteria without mutating fleet state.
+
 A tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md` (`done_keep = 10`, archive `data/done-archive.md`).
 Local `config/backlog-backend` is the opt-out knob: absent or `tasks-axi` uses the default backend, `manual` forces hand-editing.
 Compatible means bootstrap accepts `tasks-axi --version` as 0.1.1+ and `update --help` exposes `--archive-body`.
