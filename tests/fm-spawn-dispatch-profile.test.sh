@@ -94,7 +94,7 @@ run_spawn() {
   local home=$1 wt=$2 fakebin=$3 launchlog=$4
   shift 4
   : > "$launchlog"
-  FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+  FM_ROOT_OVERRIDE="${FM_ROOT_OVERRIDE:-}" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
@@ -376,17 +376,21 @@ test_batch_forwards_shared_profile_flags() {
 }
 
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
-  local rec id sm out status argvlog
+  local rec id sm primary_root out status argvlog
   local -a argv
   id=profile-secondmate-z16
   rec=$(make_spawn_case profile-secondmate codex "$id")
   read_case_record "$rec"
   enable_dispatch_profile "$HOME_DIR"
   sm="$CASE_DIR/secondmate-home"
+  primary_root="$CASE_DIR/primary-root"
+  mkdir -p "$primary_root"
+  ln -s "$ROOT/bin" "$primary_root/bin"
   make_seeded_secondmate_home "$sm" "$id"
   argvlog="$CASE_DIR/codex.argv"
 
-  out=$(FM_FAKE_EXEC_LITERALS=1 FM_FAKE_CODEX_ARGV_LOG="$argvlog" \
+  out=$(FM_ROOT_OVERRIDE="$primary_root" \
+    FM_FAKE_EXEC_LITERALS=1 FM_FAKE_CODEX_ARGV_LOG="$argvlog" \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
   status=$?
   expect_code 0 "$status" "secondmate spawn should be exempt from the dispatch-profile explicit harness requirement"
