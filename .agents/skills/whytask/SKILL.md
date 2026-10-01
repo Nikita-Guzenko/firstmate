@@ -19,7 +19,7 @@ Do not repeat implementation detail unless it changes the value or success crite
 3. Otherwise, list in-flight tasks with `tasks-axi list --state in_flight` when the default backend is active and compatible.
    If the home uses the manual backend or `tasks-axi` is unavailable or incompatible, read the `## In flight` section of `data/backlog.md` instead.
 4. If exactly one task is in flight, use it.
-5. If the target is still ambiguous, ask one concise question naming the candidate task IDs.
+5. If the target is still ambiguous, ask one concise question naming the candidate task titles.
 
 Never guess between multiple plausible tasks.
 
@@ -39,7 +39,7 @@ Do not run project code, inspect broad diffs, dispatch work, steer a crewmate, m
 
 ## Answer contract
 
-Answer in the user's language and identify the task ID and title first.
+Answer in the user's language and identify the selected task by its plain-language title first.
 Then answer exactly these three questions with concrete task-specific statements:
 
 1. **Предназначение / Purpose** - What problem this task exists to solve and why it is being done now.
