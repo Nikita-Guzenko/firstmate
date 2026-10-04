@@ -55,6 +55,10 @@ exit 1
 SH
   chmod +x "$fakebin/tmux"
   make_fake_crew_state "$fakebin" >/dev/null
+  # A live task always has a .meta; the orphan guard skips signals lacking one.
+  # Seed the default task.<id> so cases writing task.status/task.turn-ended look
+  # live. Cases that manage their own metas (or test orphans) name other ids.
+  printf 'window=test:fm-task\nkind=ship\n' > "$dir/state/task.meta"
   printf '%s\n' "$dir"
 }
 

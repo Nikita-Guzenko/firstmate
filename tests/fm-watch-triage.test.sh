@@ -111,14 +111,19 @@ test_stale_is_terminal_classifier() {
 test_scan_captain_relevant_statuses_classifier() {
   local dir state out
   dir=$(make_case classify-scan); state="$dir/state"
-  printf 'working: a\n' > "$state/one.status"
-  printf 'blocked: no perms\n' > "$state/two.status"
-  printf 'done: PR https://x/y/pull/1\n' > "$state/three.status"
+  # Each live task needs a .meta, or the orphan guard (correctly) skips it.
+  printf 'working: a\n' > "$state/one.status";   : > "$state/one.meta"
+  printf 'blocked: no perms\n' > "$state/two.status"; : > "$state/two.meta"
+  printf 'done: PR https://x/y/pull/1\n' > "$state/three.status"; : > "$state/three.meta"
+  # An orphaned captain-relevant status (task torn down, .meta gone) must NOT
+  # surface, or it wakes firstmate on every heartbeat forever.
+  printf 'done: PR https://x/y/pull/9\n' > "$state/orphan.status"
   out=$(scan_captain_relevant_statuses "$state")
   printf '%s' "$out" | grep -F "two.status" >/dev/null || fail "scan missed a blocked: status"
   printf '%s' "$out" | grep -F "three.status" >/dev/null || fail "scan missed a done: status"
   printf '%s' "$out" | grep -F "one.status" >/dev/null && fail "scan surfaced a benign working: status"
-  pass "scan_captain_relevant_statuses lists only captain-relevant statuses"
+  printf '%s' "$out" | grep -F "orphan.status" >/dev/null && fail "scan surfaced an orphaned (meta-less) status"
+  pass "scan_captain_relevant_statuses lists only captain-relevant statuses of live tasks"
 }
 
 test_classifier_primitives() {
@@ -674,6 +679,7 @@ test_heartbeat_backstop_surfaces_unsurfaced_status() {
   # .hb-surfaced-* marker). This stands in for a per-wake-path miss; the heartbeat
   # fleet-scan backstop must catch it and wake firstmate.
   printf 'done: PR https://example.test/pr/5\n' > "$state/miss.status"
+  : > "$state/miss.meta"  # a real task has a .meta; the heartbeat scan skips orphans
   sig=$(seen_sig "$state/miss.status"); printf '%s' "$sig" > "$state/.seen-miss_status"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=1 "$WATCH" > "$out" &

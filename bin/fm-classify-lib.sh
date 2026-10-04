@@ -166,9 +166,15 @@ scan_captain_relevant_statuses() {  # <state>
   local state=$1 f last task
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
+    task=$(basename "$f"); task="${task%.status}"
+    # A status whose task has no .meta is an orphan left by a task that died
+    # without teardown. Its last line never changes, so a captain-relevant one
+    # (done:/blocked:/failed:) would surface on every heartbeat forever - the same
+    # bug scan_signals had. Skip it; fm-state-sweep.sh owns removal. Both the
+    # watcher and the away-mode daemon call this, so the guard lives here once.
+    [ -f "$state/$task.meta" ] || continue
     last=$(last_status_line "$f")
     status_is_captain_relevant "$last" || continue
-    task=$(basename "$f"); task="${task%.status}"
     printf '%s\t%s\t%s\n' "$f" "$task" "$last"
   done
   return 0
