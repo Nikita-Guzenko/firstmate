@@ -117,7 +117,7 @@ All of this is purely local fast-forward/config copy that never touches the giti
 For a mid-session inheritable-config push without a full session start, run `bin/fm-config-push.sh` (config-only, does not fast-forward tracked files or nudge secondmates).
 The sweep prints `NUDGE_SECONDMATES:` only when a running secondmate advanced with an instruction-surface change (`AGENTS.md`, `bin/`, or `.agents/skills/`), so you know which to live-converge.
 Silence in the bootstrap section means all good.
-If the digest prints any diagnostic line - `MISSING`, `NEEDS_GH_AUTH`, `TANGLE`, `CREW_HARNESS_OVERRIDE`, `CREW_DISPATCH`, `FLEET_SYNC`, `SECONDMATE_SYNC`, `SECONDMATE_LIVENESS`, `TASKS_AXI`, `NUDGE_SECONDMATES`, or `FMX` - load `session-start-handling`.
+If the digest prints any diagnostic line - `MISSING`, `NEEDS_GH_AUTH`, `TANGLE`, `STALE_RUN`, `CREW_HARNESS_OVERRIDE`, `CREW_DISPATCH`, `FLEET_SYNC`, `SECONDMATE_SYNC`, `SECONDMATE_LIVENESS`, `TASKS_AXI`, `NUDGE_SECONDMATES`, or `FMX` - load `session-start-handling`.
 
 Treat harness memory of captain preferences as a recall cache; `data/captain.md` is canonical.
 If `data/projects.md` is `ABSENT` or disagrees with what is under `projects/`, rebuild it from the clones (a README skim each) before taking on work.

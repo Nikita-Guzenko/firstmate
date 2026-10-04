@@ -451,8 +451,75 @@ ROWS
   pass "bootstrap validates crew-dispatch.json and reports malformed or unverified configs"
 }
 
+# A no-mistakes run stuck in "running" is invisible everywhere else in the digest, so
+# these cases pin the STALE_RUN contract against the two real stalls that motivated it:
+# a document gate parked 13d18h, and a CI monitor spinning after checks had gone green.
+# The bounded-timeout case is the one that keeps a wedged daemon from stalling session start.
+test_stale_run_detection() {
+  local case_dir fakebin out n label runs status expect mode start elapsed
+  n=0
+  while IFS='^' read -r label runs status mode expect; do
+    [ -n "$label" ] || continue
+    n=$((n + 1))
+    case_dir="$TMP_ROOT/stale-run-$n"
+    mkdir -p "$case_dir/home/config"
+    printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+    fakebin=$(make_fake_toolchain "$case_dir")
+    # Stub no-mistakes: `axi` prints the runs table, `axi status` the run detail.
+    # The single quotes are deliberate - this is literal shell written into the stub,
+    # so nothing here may expand at generation time.
+    # shellcheck disable=SC2016
+    {
+      printf '%s\n' '#!/usr/bin/env bash'
+      printf '%s\n' 'if [ "${1:-}" = --version ]; then echo "no-mistakes version v1.57.0"; exit 0; fi'
+      printf '%s\n' 'if [ "${1:-}" = axi ] && [ "${2:-}" = status ]; then'
+      printf '  printf %s\n' "'%b\\n' \"\$FAKE_STATUS\""
+      printf '%s\n' '  exit 0'
+      printf '%s\n' 'fi'
+      printf '%s\n' 'if [ "${1:-}" = axi ]; then'
+      printf '  printf %s\n' "'%b\\n' \"\$FAKE_RUNS\""
+      printf '%s\n' '  exit 0'
+      printf '%s\n' 'fi'
+      printf '%s\n' 'exit 0'
+    } > "$fakebin/no-mistakes"
+    chmod +x "$fakebin/no-mistakes"
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+      FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_DETECT_ONLY=1 \
+      FAKE_RUNS="$runs" FAKE_STATUS="$status" "$ROOT/bin/fm-bootstrap.sh" | grep '^STALE_RUN' || true)
+    case "$mode" in
+      empty) [ -z "$out" ] || fail "$label: expected no STALE_RUN line, got: $out" ;;
+      grep)  printf '%s\n' "$out" | grep -F "$expect" >/dev/null || fail "$label: missing '$expect' (got: $out)" ;;
+    esac
+  done <<'ROWS'
+parked gate is reported with its age^runs[1]{id,branch,status,head,pr}:\n  "01A",fm/port-logdose-d4,running,9a6f0438,""^run:\n  status: running\n  awaiting_agent: parked 13d18h^grep^STALE_RUN: fm/port-logdose-d4 parked 13d18h
+parked gate names the respond command^runs[1]{id,branch,status,head,pr}:\n  "01A",fm/port-logdose-d4,running,9a6f0438,""^run:\n  status: running\n  awaiting_agent: parked 13d18h^grep^no-mistakes axi respond --action approve|fix|skip
+running-but-not-parked warns to verify CI directly^runs[1]{id,branch,status,head,pr}:\n  "01B",chore/guard,running,226ac9db,"https://github.com/o/r/pull/11"^run:\n  status: running^grep^verify CI directly with gh pr checks
+running run surfaces its PR url^runs[1]{id,branch,status,head,pr}:\n  "01B",chore/guard,running,226ac9db,"https://github.com/o/r/pull/11"^run:\n  status: running^grep^https://github.com/o/r/pull/11
+completed and cancelled runs stay silent^runs[2]{id,branch,status,head,pr}:\n  "01C",fm/done,completed,aaaa1111,""\n  "01D",fm/gone,cancelled,bbbb2222,""^run:\n  status: completed^empty^
+no runs at all stays silent^count: 0 of 0 total^run:\n  status: none^empty^
+ROWS
+
+  # A wedged daemon must not stall session start: the check is bounded per call.
+  case_dir="$TMP_ROOT/stale-run-hang"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  # shellcheck disable=SC2016  # literal shell for the stub; must not expand here
+  printf '%s\n' '#!/usr/bin/env bash' 'if [ "${1:-}" = --version ]; then echo "no-mistakes version v1.57.0"; exit 0; fi' 'sleep 120' \
+    > "$fakebin/no-mistakes"
+  chmod +x "$fakebin/no-mistakes"
+  start=$(date +%s)
+  PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_BOOTSTRAP_DETECT_ONLY=1 "$ROOT/bin/fm-bootstrap.sh" >/dev/null 2>&1 || true
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -lt 60 ] || fail "unresponsive no-mistakes stalled bootstrap for ${elapsed}s (must be bounded)"
+
+  pass "bootstrap reports stalled no-mistakes runs and stays bounded when the daemon hangs"
+}
+
 test_bootstrap_reporting
 test_no_mistakes_min_version
+test_stale_run_detection
 test_orca_backend_gates_orca_tool_only_when_selected
 test_fleet_sync_timeout_scales_with_origin_backed_project_count
 test_fleet_sync_timeout_floor_preserves_small_fleets

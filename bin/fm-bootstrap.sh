@@ -9,6 +9,7 @@
 #                 "CREW_DISPATCH: active config/crew-dispatch.json" plus indented rules,
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "TASKS_AXI: available", "TANGLE: <remediation>",
+#                 "STALE_RUN: <branch> <detail> - <remediation>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: fm-<id>...",
 #                 "SECONDMATE_LIVENESS: secondmate <id>: already-live|respawned|skipped: <reason>|respawn failed: <reason>",
@@ -36,6 +37,18 @@
 #          reading would spin up a duplicate agent). Session-start scope only;
 #          see AGENTS.md "Session start" and docs/tmux-backend.md /
 #          docs/herdr-backend.md "Agent liveness probe" for the empirical basis.
+#          A STALE_RUN line reports a no-mistakes pipeline run still in "running"
+#          state for this repo. Nothing else in the digest reads pipeline state, so a
+#          wedged run stays invisible until someone happens to type "no-mistakes axi" -
+#          two were found stalled that way (a CI monitor spinning forever on
+#          "gh pr checks: exit status 1" after the checks had already gone green, and a
+#          document gate parked 13d18h with no one answering). "parked <age>" means the
+#          run awaits a human "axi respond" and will wait indefinitely; without that
+#          marker the run may be legitimately mid-step, so the line reports it without
+#          asserting it is stuck. Verify CI directly with gh before trusting a monitor
+#          that has not advanced. Read-only and bounded by a 15s timeout per call, so it
+#          is safe on the read-only path and an unresponsive daemon cannot stall the
+#          digest.
 #          A TANGLE line means the firstmate primary checkout (FM_ROOT) is stranded
 #          on a feature branch instead of its default branch - a crewmate's work
 #          landed in the primary instead of its own worktree; restore it per the line.
@@ -542,6 +555,51 @@ crew_dispatch_validate() {
   ' "$file"
 }
 
+# A no-mistakes run left in "running" is either genuinely working or silently wedged,
+# and nothing else in the digest reads pipeline state - so a stalled run stays invisible
+# until someone happens to type "no-mistakes axi". Read-only and bounded, so this is safe
+# on the detect-only path and an unresponsive daemon cannot stall session start.
+stale_run_check() {
+  command -v no-mistakes >/dev/null 2>&1 || return 0
+  local home out branch pr detail age
+  home=$(cd "$FM_ROOT" 2>/dev/null && pwd) || return 0
+  out=$(cd "$home" && timeout 15 no-mistakes axi 2>/dev/null) || return 0
+  [ -n "$out" ] || return 0
+  # runs[N]{id,branch,status,head,pr}: one CSV row per run, indented under the header.
+  branch=$(printf '%s\n' "$out" | awk -F, '
+    /^runs\[/ { intable = 1; next }
+    !intable { next }
+    /^[^[:space:]]/ { intable = 0; next }
+    {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      if ($0 == "" || $3 != "running") next
+      b = $2; gsub(/"/, "", b)
+      print b
+      exit
+    }')
+  [ -n "$branch" ] || return 0
+  pr=$(printf '%s\n' "$out" | awk -F, '
+    /^runs\[/ { intable = 1; next }
+    !intable { next }
+    /^[^[:space:]]/ { intable = 0; next }
+    {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      if ($0 == "" || $3 != "running") next
+      p = $5; gsub(/"/, "", p)
+      print p
+      exit
+    }')
+  # "parked <dur>" is the authoritative "waiting on a human" marker; without it the run
+  # may be legitimately mid-step, so report it without claiming it is stuck.
+  detail=$(cd "$home" && timeout 15 no-mistakes axi status 2>/dev/null) || detail=
+  age=$(printf '%s\n' "$detail" | sed -n 's/.*awaiting_agent: parked \([^ ]*\).*/\1/p' | head -1)
+  if [ -n "$age" ]; then
+    echo "STALE_RUN: $branch parked $age awaiting a gate response${pr:+ ($pr)} - answer it with: no-mistakes axi respond --action approve|fix|skip"
+  else
+    echo "STALE_RUN: $branch still running${pr:+ ($pr)} - if it has not advanced, verify CI directly with gh pr checks before trusting the monitor; inspect with: no-mistakes axi status"
+  fi
+}
+
 if [ "${1:-}" = "install" ]; then
   shift
   [ $# -gt 0 ] || { echo "usage: fm-bootstrap.sh install <tool>..." >&2; exit 1; }
@@ -586,6 +644,7 @@ crew_dispatch_validate
 if ! fm_backlog_backend_manual "$CONFIG" && fm_tasks_axi_compatible; then
   echo "TASKS_AXI: available"
 fi
+stale_run_check
 if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   secondmate_sync
   secondmate_liveness_sweep
