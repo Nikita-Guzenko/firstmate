@@ -293,7 +293,7 @@ FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT=     # optional seconds allowed for bootstrap's 
 FM_FLEET_PRUNE=1        # set to 0 to skip pruning local branches whose upstream is gone
 FM_STALE_WORKTREE_LOCK_AGE_SECS=30       # min mtime age before fm-teardown.sh treats a leftover worktree git index.lock as provably stale
 FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=2 # seconds fm-teardown.sh waits before retrying a worktree return that failed on a git lock
-FM_BUSY_REGEX='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…'   # busy-pane signatures, shared by watcher, fm-crew-state pane fallback, and tmux helper (the trailing gerund+ellipsis matches claude 2.1.224's footerless running turn)
+FM_BUSY_REGEX='esc (to )?interrupt|Working\.\.\.|Ctrl\+c:cancel|[A-Za-z]ing…|\([^)]*↓ [0-9][0-9.,]*k? tokens\)'   # busy-pane signatures, shared by watcher, fm-crew-state pane fallback, and tmux helper (the trailing gerund+ellipsis matches claude 2.1.224's footerless running turn; the parenthesized "↓ N tokens" counter matches claude >=2.1.x's telemetry spinner line)
 FM_COMPOSER_IDLE_RE=    # optional empty-composer regex, applied after dim-ghost and border stripping
 GROK_HOME=              # optional Grok config home for firstmate's global grok turn-end hook; defaults to ~/.grok
 FM_SEND_RETRIES=3       # fm-send Enter-retry attempts after typing the line once

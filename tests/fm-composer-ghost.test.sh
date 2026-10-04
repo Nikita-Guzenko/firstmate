@@ -216,9 +216,47 @@ test_peek_output_is_escape_free() {
   pass "fm-peek output is escape-free (no raw -e bytes reach firstmate context)"
 }
 
+# --- claude 2.1.x telemetry spinner on the cursor line is busy, not pending --
+
+test_claude_telemetry_spinner_line_is_not_pending() {
+  local dir fb capture line
+  dir="$TMP_ROOT/spinner-busy"; mkdir -p "$dir"
+  fb=$(make_fake_tmux "$dir")
+  capture="$dir/styled.txt"
+  # Live shapes from 2026-08-25 (Claude Code 2.1.196): the spinner status is the
+  # cursor line mid-turn, with NO "esc to interrupt" hint. Each must read as
+  # busy/empty, never as pending composer text.
+  for line in \
+    '✻ Pontificating… (14s · ↓ 528 tokens)' \
+    '✶ Razzmatazzing… (23s · ↓ 1.1k tokens)' \
+    '· Hyperspacing… (8s · ↓ 321 tokens)'; do
+    printf '%s\n' "$line" > "$capture"
+    if PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+       fm_pane_input_pending "fakepane"; then
+      fail "telemetry spinner line falsely read as pending: '$line'"
+    fi
+  done
+  pass "claude telemetry spinner lines (no esc hint) are busy, not pending input"
+}
+
+test_token_counter_in_typed_text_no_regression_guard() {
+  local dir fb capture
+  dir="$TMP_ROOT/spinner-typed"; mkdir -p "$dir"
+  fb=$(make_fake_tmux "$dir")
+  capture="$dir/styled.txt"
+  # Ordinary typed text WITHOUT the parenthesized token counter stays pending.
+  printf '❯ deploy the tokens fix now\n' > "$capture"
+  PATH="$fb:$PATH" FM_FAKE_STYLED="$capture" FM_FAKE_CY=0 \
+    fm_pane_input_pending "fakepane" \
+    || fail "plain typed text mentioning tokens wrongly read as not pending"
+  pass "typed text mentioning tokens (no spinner counter) is still pending"
+}
+
 test_strip_ghost_drops_dim_keeps_normal
 test_strip_ghost_handles_combined_and_boundary_codes
 test_strip_ghost_keeps_colored_text_with_2_payloads
+test_claude_telemetry_spinner_line_is_not_pending
+test_token_counter_in_typed_text_no_regression_guard
 test_dim_ghost_only_composer_is_not_pending
 test_dim_ghost_inside_bordered_composer_is_not_pending
 test_normal_text_still_pending
