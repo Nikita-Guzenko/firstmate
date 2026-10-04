@@ -829,6 +829,47 @@ test_stale_index_lock_cleared_and_teardown_succeeds() {
   pass "provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds"
 }
 
+test_no_lock_transient_return_flake_retries_and_succeeds() {
+  local case_dir rc
+  case_dir=$(make_case no-lock-flake)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+
+  # Fake treehouse: the FIRST `return` fails with no git lock anywhere (the
+  # transient pool flake observed live on 2026-08-25, waystory-pwa slots 1 and
+  # 3), every later attempt succeeds. Attempts are counted in a marker file.
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ]; then
+  marker="$case_dir/return-attempts"
+  n=\$(cat "\$marker" 2>/dev/null || echo 0)
+  n=\$((n + 1))
+  printf '%s' "\$n" > "\$marker"
+  if [ "\$n" -eq 1 ]; then
+    echo "error: pool return failed (transient)" >&2
+    exit 1
+  fi
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  set +e
+  FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=0 \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "no-lock-flake: teardown should succeed after the no-lock retry"
+  assert_grep "return succeeded on no-lock retry" "$case_dir/stderr" \
+    "no-lock-flake: teardown did not report the no-lock retry success"
+  [ "$(cat "$case_dir/return-attempts")" = 2 ] \
+    || fail "no-lock-flake: treehouse return should have been attempted exactly twice (got $(cat "$case_dir/return-attempts"))"
+  pass "transient no-lock treehouse return failure is retried once and teardown succeeds"
+}
+
 test_live_index_lock_is_never_removed_and_teardown_refuses() {
   local case_dir rc lock
   case_dir=$(make_case live-index-lock)
@@ -1030,6 +1071,7 @@ test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
 test_gh_error_and_content_absent_refuses
 test_stale_index_lock_cleared_and_teardown_succeeds
+test_no_lock_transient_return_flake_retries_and_succeeds
 test_live_index_lock_is_never_removed_and_teardown_refuses
 test_lsof_error_never_clears_index_lock
 test_stale_index_lock_cleanup_rechecks_dirty_worktree
