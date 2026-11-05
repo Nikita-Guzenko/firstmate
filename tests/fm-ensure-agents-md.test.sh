@@ -17,8 +17,10 @@ test_created_agents_md_includes_self_governance() {
   assert_present "$repo/CLAUDE.md" "CLAUDE.md symlink was not created"
   [ -L "$repo/CLAUDE.md" ] || fail "CLAUDE.md is not a symlink"
   assert_grep "## Maintaining this file" "$agents" "self-governance section heading missing"
-  assert_grep "Keep this file for knowledge useful to almost every future agent session in this project." "$agents" \
+  assert_grep "Keep this file for project-wide working rules useful to almost every future agent session in this project." "$agents" \
     "self-governance section lost the future-session bar"
+  assert_grep "Put a gotcha about one piece of code in that code: a comment at the line with the reason and the date, a lint rule, or a test." "$agents" \
+    "self-governance section lost code-specific knowledge routing"
   assert_grep "Do not repeat what the codebase already shows; point to the authoritative file or command instead." "$agents" \
     "self-governance section lost pointer-over-copy guidance"
   assert_grep "Prefer rewriting or pruning existing entries over appending new ones." "$agents" \
@@ -45,7 +47,7 @@ EOF
     "promotion lost existing CLAUDE.md content"
   count=$(grep -Fc "## Maintaining this file" "$agents")
   [ "$count" -eq 1 ] || fail "promotion wrote $count self-governance sections"
-  assert_grep "Keep this file for knowledge useful to almost every future agent session in this project." "$agents" \
+  assert_grep "Keep this file for project-wide working rules useful to almost every future agent session in this project." "$agents" \
     "promoted AGENTS.md missing self-governance wording"
   pass "fm-ensure-agents-md.sh: promoted CLAUDE.md includes self-governance section"
 }

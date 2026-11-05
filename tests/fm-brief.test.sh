@@ -104,8 +104,10 @@ test_ship_project_memory_wording() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_present "$brief" "brief was not scaffolded"
-  assert_grep "Record only project knowledge useful to almost every future session." "$brief" \
+  assert_grep "Record only project-wide working rules useful to almost every future session in \`AGENTS.md\`." "$brief" \
     "project-memory contract lost the durable-knowledge bar"
+  assert_grep "Put a gotcha about one piece of code in that code: a comment at the line with the reason and the date, a lint rule, or a test." "$brief" \
+    "project-memory contract lost code-specific knowledge routing"
   assert_grep "prefer a pointer to the authoritative file, command, or doc over copying the detail" "$brief" \
     "project-memory contract lost pointer-over-copy guidance"
   assert_grep "lacks \`## Maintaining this file\`, add that short self-governance section" "$brief" \

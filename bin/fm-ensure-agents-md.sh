@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ensure a project worktree follows the agent-memory file convention.
-# AGENTS.md is the real project-intrinsic knowledge file; CLAUDE.md is a
+# Ensure a project worktree follows the agent-instruction file convention.
+# AGENTS.md is the real project-wide working-rules file; CLAUDE.md is a
 # relative symlink to it for compatibility. Creates a minimal AGENTS.md skeleton
 # when neither file exists, promotes a real CLAUDE.md file when it is the only
 # file present, and refuses to clobber distinct real files or wrong symlinks.
@@ -36,7 +36,8 @@ write_maintenance_section() {
   cat <<'EOF'
 ## Maintaining this file
 
-Keep this file for knowledge useful to almost every future agent session in this project.
+Keep this file for project-wide working rules useful to almost every future agent session in this project.
+Put a gotcha about one piece of code in that code: a comment at the line with the reason and the date, a lint rule, or a test.
 Do not repeat what the codebase already shows; point to the authoritative file or command instead.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve this bar for all agents and keep entries concise.
@@ -65,9 +66,9 @@ write_skeleton() {
   cat > "$AGENTS" <<'EOF'
 # Project agent memory
 
-This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
+This file is the project's committed home for project-wide working rules: build, test, release, and architecture conventions useful to almost every future agent session.
 
-- Add durable project-specific notes here as they are discovered through real work.
+- Add such rules here as they are discovered through real work.
 EOF
   ensure_maintenance_section
 }

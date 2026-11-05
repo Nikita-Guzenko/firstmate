@@ -26,10 +26,10 @@
 #                firstmate reviews, captain approves, firstmate merges to local main
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # Scout tasks ignore mode - their deliverable is a report, not a merge.
-# Ship tasks include a project-memory section so durable project-intrinsic
-# learnings can be committed to AGENTS.md through the project's delivery path;
-# it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
-# over copied detail) and has the crewmate add the fm-ensure-agents-md.sh
+# Ship tasks include a project-memory section so project-wide working rules can
+# be committed to AGENTS.md and code-specific gotchas can be put in code through
+# the project's delivery path; it carries the AGENTS.md authoring bar and has
+# the crewmate add the fm-ensure-agents-md.sh
 # self-governance section when a touched project AGENTS.md lacks it.
 # Refuses to overwrite an existing brief.
 set -eu
@@ -267,11 +267,12 @@ $RULE1
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
 
 # Project memory
-If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced durable project-intrinsic knowledge, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
-Record only project knowledge useful to almost every future session.
+If \`AGENTS.md\` or \`CLAUDE.md\` already exists, or if this task produced a project-wide working rule, run \`$FM_ROOT/bin/fm-ensure-agents-md.sh .\` in the worktree.
+Record only project-wide working rules useful to almost every future session in \`AGENTS.md\`.
+Put a gotcha about one piece of code in that code: a comment at the line with the reason and the date, a lint rule, or a test.
 For anything the codebase already shows, prefer a pointer to the authoritative file, command, or doc over copying the detail.
 If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, add that short self-governance section from \`$FM_ROOT/bin/fm-ensure-agents-md.sh\` in the same pass.
-Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
+Apart from adding missing self-governance, skip \`AGENTS.md\` edits when the task produced no project-wide working rule.
 
 $DOD
 EOF

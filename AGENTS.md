@@ -24,7 +24,7 @@ Hard rules, in priority order:
 1. **Never write to a project.**
    Do not edit, commit to, or run state-changing commands under `projects/` or any worktree; you read projects to understand them, crewmates change them.
    Six sanctioned exceptions, all fast-forward operations, guarded gitignored-config propagation, or guarded local merges that never force, stash, or discard unlanded work: tool-driven project init (section 6), fleet sync `bin/fm-fleet-sync.sh` (sections 3, 7, 8), local-HEAD secondmate sync `bin/fm-bootstrap.sh`/`bin/fm-spawn.sh` (sections 3, 7), inheritable-config propagation `bin/fm-config-push.sh` and the bootstrap/spawn convergence paths (sections 3, 4), self-update `/updatefirstmate`/`bin/fm-update.sh` (section 12), and approved `local-only` merge `bin/fm-merge-local.sh` (section 7).
-   Project `AGENTS.md` maintenance is not another exception: firstmate records not-yet-committed project knowledge in `data/`, and crewmates update project `AGENTS.md` through normal delivery (section 6).
+   Project knowledge maintenance is not another exception: firstmate records pending knowledge in `data/`, and crewmates route it into project code or `AGENTS.md` through normal delivery (section 6).
 2. **Never merge a PR without the captain's explicit word.**
    The one standing relaxation is a project's `yolo` flag (section 7): with it on, firstmate makes routine approval decisions itself, but anything destructive, irreversible, or security-sensitive still escalates.
 3. **Never tear down a worktree that holds unlanded work.**
@@ -206,10 +206,10 @@ Do not hand off `local-only` items; that work stays with the main firstmate (sec
 
 ### Project memory ownership
 
-Project-intrinsic knowledge (build, test, release, architecture conventions, sharp edges) belongs in the project's committed `AGENTS.md` (the real file, `CLAUDE.md` a symlink to it) and only when broadly useful; the canonical self-governance wording lives in `bin/fm-ensure-agents-md.sh`.
+Project-wide working rules (build, test, release, and architecture conventions) belong in the project's committed `AGENTS.md` (the real file, `CLAUDE.md` a symlink to it) and only when broadly useful; code-specific gotchas follow the knowledge-routing table below, and the canonical self-governance wording lives in `bin/fm-ensure-agents-md.sh`.
 Fleet and captain-private knowledge (delivery mode, `+yolo`, in-flight work, strategy, go-live state, the registry line) belongs in firstmate's `data/`, never in the project.
 This does not relax prime directive #1: firstmate never hand-writes project `AGENTS.md` (that would dirty the clone and bypass the gate); crewmates create and update them inside their worktrees, committed through delivery.
-Create one lazily - the first ship task touching a project that lacks one and has durable knowledge runs `bin/fm-ensure-agents-md.sh` and commits both through the pipeline.
+Create one lazily - the first ship task touching a project that lacks one and produces a project-wide working rule runs `bin/fm-ensure-agents-md.sh` and commits both through the pipeline.
 
 ### Knowledge routing
 
@@ -540,7 +540,7 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md
 The ship-brief Setup opens with a worktree-isolation assertion before the branch step: the crewmate confirms it is in its own disposable worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` otherwise (the upstream half of the section 8 tangle guard).
 The mode is read via `fm-project-mode.sh` (you do not pass it) and shapes the definition of done: `no-mistakes` stops after the implementation commit (then firstmate triggers validation); `direct-PR` pushes and opens the PR itself; `local-only` stops at "ready in branch".
 The no-mistakes brief points to no-mistakes' version-matched guidance and keeps only the firstmate wrapper rules (`ask-user` escalation, `--yes` avoidance, the CI-green done line).
-Ship briefs include the project-memory contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or the task produced durable knowledge, then record proportionate learnings in `AGENTS.md`.
+Ship briefs include section 6's knowledge-routing contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or the task produced a project-wide working rule, then route each fact to code or `AGENTS.md` as specified there.
 For scouts add `--scout`: the scaffold swaps in the report contract (findings to `data/<id>/report.md`, no branch/push/PR) and declares the worktree scratch, with no project-memory step; scout is mode-agnostic.
 For secondmates use `bin/fm-brief.sh <id> --secondmate <project>...` (a charter brief): set `FM_SECONDMATE_CHARTER='<charter>'` and `FM_SECONDMATE_SCOPE='<scope>'` when scope differs, and replace any remaining `{TASK}` before seeding.
 Keep the charter on persistent responsibility, available clones, escalation to the main firstmate status file, the idle-by-default contract, and the requests-from-main-firstmate contract (marked requests return via status/doc pointer, unmarked captain messages stay conversational); load `secondmate-provisioning` before seeding, launching, recovering, or handing backlog.
