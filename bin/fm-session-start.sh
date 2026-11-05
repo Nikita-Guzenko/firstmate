@@ -6,7 +6,7 @@
 # instead of the six-plus separate reads the old docs required: run
 # fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
 # data/captain.md, data/learnings.md, then run fm-lock.sh, fm-wake-drain.sh,
-# then read data/backlog.md, every state/*.meta, and every state/*.status.
+# then read every state/*.meta and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
@@ -34,9 +34,14 @@
 #                       when locked.
 #   4. context digest - data/projects.md, data/secondmates.md, data/captain.md,
 #                       data/learnings.md: read-only, always safe, always runs.
-#   5. fleet digest   - data/backlog.md, every state/*.meta, a bounded
+#   5. fleet digest   - every state/*.meta (the in-flight tasks), a bounded
 #                       state/*.status tail, state/.afk, and a cheap
 #                       per-task endpoint-liveness read: read-only, always runs.
+#                       data/backlog.md is NOT printed (NIK-463, 5 Nov 2026): a
+#                       frozen queue grew to 191 KB / 48k tokens in one home and
+#                       every session paid for it. The in-flight tasks are the
+#                       state/*.meta; the work queue is the issue tracker (Linear
+#                       in this fleet). Read data/backlog.md on demand only.
 #   6. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
 #                       block and deliberately never arms the watcher itself.
@@ -243,7 +248,8 @@ print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 
 # --- 5. fleet-state digest ---------------------------------------------
 section "FLEET STATE"
-print_file_or_absent "$DATA/backlog.md" "data/backlog.md"
+# NIK-463: the backlog body is never printed here (see the header, step 5).
+printf 'data/backlog.md: not printed. In-flight tasks are the state/*.meta below; the work queue is the issue tracker (Linear in this fleet). Read data/backlog.md on demand, including for /whytask, /bearings, or a backlog mutation.\n'
 
 subsection "In-flight tasks (state/*.meta)"
 META_FOUND=0
@@ -328,7 +334,8 @@ fi
 cat <<'EOF'
 The digest above is complete for this session start. Do NOT re-read
 data/projects.md, data/secondmates.md, data/captain.md, data/learnings.md,
-data/backlog.md, or state/*.meta now - they were just printed in full.
+or state/*.meta now - they were just printed in full. data/backlog.md was
+NOT printed: open it on demand when a task needs it.
 Do NOT bulk-read state/*.status now either: their bounded tails were just
 printed with full log paths for targeted follow-up when older wake-event
 history is actually needed. Re-reading everything defeats the entire point

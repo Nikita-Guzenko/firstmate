@@ -188,7 +188,8 @@ The watcher, wake queue, arm wrapper, and afk daemon are unchanged; X mode is la
 
 ## Project memory belongs to projects
 
-Durable project-intrinsic agent knowledge lives in each project's committed `AGENTS.md`, with `CLAUDE.md` as a symlink.
+A gotcha about one piece of code lives in that code through normal crewmate delivery.
+Project-wide working rules live in each project's committed `AGENTS.md`, with `CLAUDE.md` as a symlink.
 Ship briefs prompt crewmates to create or update those files through the normal delivery path; `data/projects.md` stays a thin private registry.
 Each project `AGENTS.md` carries a short `## Maintaining this file` self-governance section; `bin/fm-ensure-agents-md.sh` owns the canonical wording and appends it when creating the skeleton or promoting an existing `CLAUDE.md`.
 The full ownership rule - what is project-intrinsic versus fleet-private, and how firstmate keeps the two apart without writing into project clones - is owned by firstmate's operating manual in [`AGENTS.md`](../AGENTS.md) (project memory ownership).
@@ -196,7 +197,7 @@ The full ownership rule - what is project-intrinsic versus fleet-private, and ho
 ## Operational memory routing
 
 `/stow` sweeps the current session for durable knowledge that only exists in conversation and routes each finding to the most specific disk home.
-Captain preferences go to `data/captain.md`, fleet-local operational facts and gotchas go to `data/learnings.md`, project-intrinsic knowledge goes through normal crewmate delivery into that project's committed `AGENTS.md`, and task-scoped notes or undone next steps go to the backlog.
+Captain preferences go to `data/captain.md`, fleet-local operational facts go to `data/learnings.md`, a gotcha about one piece of project code goes through normal crewmate delivery into that code (a comment at the line, a lint rule or a test), project-wide working rules go the same way into that project's committed `AGENTS.md`, and task-scoped notes or undone next steps go to the backlog.
 Memory writes use inspect-then-update: read the current destination first, then rewrite or prune matching bullets or notes in place instead of appending by default.
 Task-scoped notes use `tasks-axi show <id> --full` followed by `tasks-axi update <id> --body-file <path>`, adding `--archive-body` when the prior body should remain recoverable.
 Generalizable firstmate knowledge goes to shared tracked docs through the normal PR pipeline; the firstmate-internal `/stow` deliberately never stores findings in either skill directory.

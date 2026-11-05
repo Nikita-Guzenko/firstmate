@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Ensure a project worktree follows the agent-memory file convention.
-# AGENTS.md is the real project-intrinsic knowledge file; CLAUDE.md is a
+# Ensure a project worktree follows the agent-instruction file convention.
+# AGENTS.md is the real project-wide working-rules file; CLAUDE.md is a
 # relative symlink to it for compatibility. Creates a minimal AGENTS.md skeleton
 # when neither file exists, promotes a real CLAUDE.md file when it is the only
 # file present, and refuses to clobber distinct real files or wrong symlinks.
 # Owns the canonical "## Maintaining this file" self-governance wording for
 # project AGENTS.md files, appending it to created skeletons and promoted
-# CLAUDE.md files that lack it.
+# CLAUDE.md files that lack it, and migrating the exact legacy canonical block.
 # This is a worktree utility for crewmates, not a supervision script, so it does
 # not call fm-guard.sh.
 # Usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
@@ -36,14 +36,59 @@ write_maintenance_section() {
   cat <<'EOF'
 ## Maintaining this file
 
-Keep this file for knowledge useful to almost every future agent session in this project.
+Keep this file for project-wide working rules useful to almost every future agent session in this project.
+Put a gotcha about one piece of code in that code: a comment at the line with the reason and the date, a lint rule, or a test.
 Do not repeat what the codebase already shows; point to the authoritative file or command instead.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve this bar for all agents and keep entries concise.
 EOF
 }
 
+migrate_legacy_maintenance_section() {
+  local contents legacy replacement
+  legacy=$(cat <<'EOF'
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
+EOF
+)
+  replacement=$(write_maintenance_section)
+  contents=$(cat "$AGENTS"; printf '\034')
+  contents=${contents%$'\034'}
+  case "$contents" in
+    *"$legacy"*)
+      contents=${contents/"$legacy"/"$replacement"}
+      printf '%s' "$contents" > "$AGENTS" || return 2
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+migrate_existing_maintenance_section() {
+  local migration_status=0
+  MAINTENANCE_MIGRATED=0
+  migrate_legacy_maintenance_section || migration_status=$?
+  if [ "$migration_status" -gt 1 ]; then
+    return "$migration_status"
+  fi
+  if [ "$migration_status" -eq 0 ]; then
+    MAINTENANCE_MIGRATED=1
+  fi
+}
+
 ensure_maintenance_section() {
+  local migration_status=0
+  migrate_legacy_maintenance_section || migration_status=$?
+  if [ "$migration_status" -eq 0 ]; then
+    return 0
+  fi
+  if [ "$migration_status" -gt 1 ]; then
+    return "$migration_status"
+  fi
   if grep -Fqx '## Maintaining this file' "$AGENTS"; then
     return 0
   fi
@@ -65,9 +110,9 @@ write_skeleton() {
   cat > "$AGENTS" <<'EOF'
 # Project agent memory
 
-This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
+This file is the project's committed home for project-wide working rules: build, test, release, and architecture conventions useful to almost every future agent session.
 
-- Add durable project-specific notes here as they are discovered through real work.
+- Add such rules here as they are discovered through real work.
 EOF
   ensure_maintenance_section
 }
@@ -102,15 +147,25 @@ fi
 if [ -e "$AGENTS" ]; then
   if [ -L "$CLAUDE" ]; then
     if is_correct_claude_symlink; then
-      echo "unchanged: AGENTS.md with CLAUDE.md -> AGENTS.md in $DIR"
+      migrate_existing_maintenance_section
+      if [ "$MAINTENANCE_MIGRATED" -eq 1 ]; then
+        echo "updated: migrated AGENTS.md maintenance section in $DIR"
+      else
+        echo "unchanged: AGENTS.md with CLAUDE.md -> AGENTS.md in $DIR"
+      fi
       exit 0
     fi
     echo "conflict: CLAUDE.md is a symlink in $DIR but does not point to AGENTS.md" >&2
     exit 1
   fi
   if [ ! -e "$CLAUDE" ]; then
+    migrate_existing_maintenance_section
     ln -s "$AGENTS" "$CLAUDE"
-    echo "symlinked: CLAUDE.md -> AGENTS.md in $DIR"
+    if [ "$MAINTENANCE_MIGRATED" -eq 1 ]; then
+      echo "updated: migrated AGENTS.md maintenance section and symlinked CLAUDE.md -> AGENTS.md in $DIR"
+    else
+      echo "symlinked: CLAUDE.md -> AGENTS.md in $DIR"
+    fi
     exit 0
   fi
   if [ -f "$CLAUDE" ]; then

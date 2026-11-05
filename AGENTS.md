@@ -24,7 +24,7 @@ Hard rules, in priority order:
 1. **Never write to a project.**
    Do not edit, commit to, or run state-changing commands under `projects/` or any worktree; you read projects to understand them, crewmates change them.
    Six sanctioned exceptions, all fast-forward operations, guarded gitignored-config propagation, or guarded local merges that never force, stash, or discard unlanded work: tool-driven project init (section 6), fleet sync `bin/fm-fleet-sync.sh` (sections 3, 7, 8), local-HEAD secondmate sync `bin/fm-bootstrap.sh`/`bin/fm-spawn.sh` (sections 3, 7), inheritable-config propagation `bin/fm-config-push.sh` and the bootstrap/spawn convergence paths (sections 3, 4), self-update `/updatefirstmate`/`bin/fm-update.sh` (section 12), and approved `local-only` merge `bin/fm-merge-local.sh` (section 7).
-   Project `AGENTS.md` maintenance is not another exception: firstmate records not-yet-committed project knowledge in `data/`, and crewmates update project `AGENTS.md` through normal delivery (section 6).
+   Project knowledge maintenance is not another exception: firstmate records pending knowledge in `data/`, and crewmates route it into project code or `AGENTS.md` through normal delivery (section 6).
 2. **Never merge a PR without the captain's explicit word.**
    The one standing relaxation is a project's `yolo` flag (section 7): with it on, firstmate makes routine approval decisions itself, but anything destructive, irreversible, or security-sensitive still escalates.
 3. **Never tear down a worktree that holds unlanded work.**
@@ -69,7 +69,7 @@ config/              LOCAL, gitignored knobs: crew-harness, crew-dispatch.json, 
 data/                personal fleet records; LOCAL, gitignored
   backlog.md         task queue (section 10)
   captain.md         captain's preferences and working style; LOCAL; canonical over harness memory; inspect-then-update
-  learnings.md       fleet-local operational facts and gotchas; LOCAL; dated, evidence-backed, curated, inspect-then-update; created lazily, absent until this home has a learning
+  learnings.md       fleet-local operational facts (a gotcha about one piece of code goes to that code, not here); LOCAL; dated, evidence-backed, curated, inspect-then-update; created lazily, absent until this home has a learning
   projects.md        thin project navigation registry (section 6)
   secondmates.md     secondmate routing table (section 6)
   <id>/brief.md      per-task crewmate brief, or charter brief when kind=secondmate
@@ -100,11 +100,11 @@ It composes `fm-lock.sh`, `fm-bootstrap.sh`, and `fm-wake-drain.sh` as real subp
 2. **Bootstrap** - detect-only diagnostics (tools/versions, GitHub auth, worktree-tangle, harness override, dispatch-profile validation, backlog-backend) always run and print; the four MUTATING sweeps (fleet sync, local secondmate fast-forward, secondmate liveness, X-mode artifacts) run only when this session holds the lock.
 3. **Wake queue** - when locked, drains the durable wake queue and prints it as this turn's first work queue.
 4. **Context digest** - full `data/projects.md`, `data/secondmates.md`, `data/captain.md`, and `data/learnings.md`, each delimited; a missing file prints an explicit `ABSENT` marker (absence is meaningful, never confused with empty-but-present).
-5. **Fleet-state digest** - full `data/backlog.md`; every `state/<id>.meta`; a bounded tail of each `state/<id>.status` (wake-EVENT history, not current state, with the full log path for a deeper read); the `state/.afk` flag; and one cheap alive/dead read of each task's backend endpoint.
+5. **Fleet-state digest** - every `state/<id>.meta` (the in-flight tasks); a bounded tail of each `state/<id>.status` (wake-EVENT history, not current state, with the full log path for a deeper read); the `state/.afk` flag; and one cheap alive/dead read of each task's backend endpoint. It does not print `data/backlog.md`: the work queue is the issue tracker (Linear in this fleet), and the backlog file is read on demand only.
 6. **Supervision block** - emits exactly one operating block for the detected primary harness, which owns the exact wait or wake mechanism; the script itself never starts supervision.
 
 **Everything in this digest is read exactly once.**
-Do not separately run those three scripts, and do not re-read `data/projects.md`, `data/secondmates.md`, `data/captain.md`, `data/learnings.md`, `data/backlog.md`, or any `state/*.meta` or `state/*.status` afterward - they were just printed in full.
+Do not separately run those three scripts, and do not re-read `data/projects.md`, `data/secondmates.md`, `data/captain.md`, `data/learnings.md`, or any `state/*.meta` or `state/*.status` afterward - they were just printed in full.
 Re-read a file only if the digest flagged it `ABSENT` (then rebuild or create it per this section and section 6), if it looked corrupt, or for older wake-event history in an individual status log.
 This does not block a targeted current-state read immediately before a workflow writes one of these files (such as `/stow`'s inspect-then-update pass or a backlog mutation).
 
@@ -206,10 +206,10 @@ Do not hand off `local-only` items; that work stays with the main firstmate (sec
 
 ### Project memory ownership
 
-Project-intrinsic knowledge (build, test, release, architecture conventions, sharp edges) belongs in the project's committed `AGENTS.md` (the real file, `CLAUDE.md` a symlink to it) and only when broadly useful; the canonical self-governance wording lives in `bin/fm-ensure-agents-md.sh`.
+Project-wide working rules (build, test, release, and architecture conventions) belong in the project's committed `AGENTS.md` (the real file, `CLAUDE.md` a symlink to it) and only when broadly useful; code-specific gotchas follow the knowledge-routing table below, and the canonical self-governance wording lives in `bin/fm-ensure-agents-md.sh`.
 Fleet and captain-private knowledge (delivery mode, `+yolo`, in-flight work, strategy, go-live state, the registry line) belongs in firstmate's `data/`, never in the project.
 This does not relax prime directive #1: firstmate never hand-writes project `AGENTS.md` (that would dirty the clone and bypass the gate); crewmates create and update them inside their worktrees, committed through delivery.
-Create one lazily - the first ship task touching a project that lacks one and has durable knowledge runs `bin/fm-ensure-agents-md.sh` and commits both through the pipeline.
+Create one lazily - the first ship task touching a project that lacks one and produces a project-wide working rule runs `bin/fm-ensure-agents-md.sh` and commits both through the pipeline.
 
 ### Knowledge routing
 
@@ -218,8 +218,9 @@ Route each durable fact to its most specific home:
 | Kind of knowledge | Home |
 | --- | --- |
 | Captain preferences and working style | `data/captain.md` (inspect-then-update) |
-| Project-intrinsic knowledge | that project's `AGENTS.md`, via crewmate delivery |
-| Fleet-local operational facts and gotchas | `data/learnings.md` (inspect-then-update) |
+| A gotcha about one piece of code | that code, via crewmate delivery: a comment at the line (the reason and the date), a lint rule or a test - never a notes file |
+| Project-wide working rules | that project's `AGENTS.md`, via crewmate delivery |
+| Fleet-local operational facts | `data/learnings.md` (inspect-then-update) |
 | Generalizable to every firstmate user | the shared `AGENTS.md`, via PR |
 | Task-scoped notes | backlog item notes (section 10) |
 | Investigation findings | scout reports at `data/<id>/report.md` |
@@ -539,7 +540,7 @@ Scaffold with `bin/fm-brief.sh <id> <repo-name>` - it writes `data/<id>/brief.md
 The ship-brief Setup opens with a worktree-isolation assertion before the branch step: the crewmate confirms it is in its own disposable worktree, not the primary checkout, and stops with `blocked: launched in primary checkout, not an isolated worktree` otherwise (the upstream half of the section 8 tangle guard).
 The mode is read via `fm-project-mode.sh` (you do not pass it) and shapes the definition of done: `no-mistakes` stops after the implementation commit (then firstmate triggers validation); `direct-PR` pushes and opens the PR itself; `local-only` stops at "ready in branch".
 The no-mistakes brief points to no-mistakes' version-matched guidance and keeps only the firstmate wrapper rules (`ask-user` escalation, `--yes` avoidance, the CI-green done line).
-Ship briefs include the project-memory contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or the task produced durable knowledge, then record proportionate learnings in `AGENTS.md`.
+Ship briefs include section 6's knowledge-routing contract: run `bin/fm-ensure-agents-md.sh` when the project already has agent-memory files or the task produced a project-wide working rule, then route each fact to code or `AGENTS.md` as specified there.
 For scouts add `--scout`: the scaffold swaps in the report contract (findings to `data/<id>/report.md`, no branch/push/PR) and declares the worktree scratch, with no project-memory step; scout is mode-agnostic.
 For secondmates use `bin/fm-brief.sh <id> --secondmate <project>...` (a charter brief): set `FM_SECONDMATE_CHARTER='<charter>'` and `FM_SECONDMATE_SCOPE='<scope>'` when scope differs, and replace any remaining `{TASK}` before seeding.
 Keep the charter on persistent responsibility, available clones, escalation to the main firstmate status file, the idle-by-default contract, and the requests-from-main-firstmate contract (marked requests return via status/doc pointer, unmarked captain messages stay conversational); load `secondmate-provisioning` before seeding, launching, recovering, or handing backlog.
