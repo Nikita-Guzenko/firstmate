@@ -292,11 +292,11 @@ EOF
   assert_contains "$out" "data/secondmates.md" "digest did not label the secondmates.md section"
   assert_contains "$out" "data/learnings.md" "digest did not label the learnings.md section"
 
-  # Exactly two ABSENT markers (secondmates.md, learnings.md; backlog.md is
-  # covered by its own test) - and the present-but-empty captain.md must NOT
-  # print ABSENT.
+  # Exactly two ABSENT markers (secondmates.md, learnings.md; backlog.md is no
+  # longer printed, see test_fleet_digest_does_not_print_backlog) - and the
+  # present-but-empty captain.md must NOT print ABSENT.
   absent_count=$(printf '%s\n' "$out" | grep -c '^ABSENT$')
-  [ "$absent_count" -eq 3 ] || fail "expected 3 ABSENT markers (secondmates.md, learnings.md, backlog.md), got $absent_count: $out"
+  [ "$absent_count" -eq 2 ] || fail "expected 2 ABSENT markers (secondmates.md, learnings.md), got $absent_count: $out"
 
   cap_section=$(printf '%s\n' "$out" | awk '/^data\/captain\.md$/{flag=1;next}/^data\//{flag=0}flag')
   assert_contains "$cap_section" "(present, empty)" "empty-but-present captain.md was not distinguished from ABSENT"
@@ -560,6 +560,25 @@ EOF
   pass "an empty fleet reports (none) for in-flight tasks and an absent AFK flag"
 }
 
+# NIK-463: a frozen backlog grew to 48k tokens in one home and every session
+# paid for it. The digest must point at the queue, never print its body.
+test_fleet_digest_does_not_print_backlog() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-not-printed)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' '## Queued' '- [ ] BACKLOG-BODY-MARKER a queued task body' > "$home/data/backlog.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "BACKLOG-BODY-MARKER" "the digest printed the data/backlog.md body"
+  assert_contains "$out" "data/backlog.md: not printed" "the digest did not point at the backlog"
+
+  pass "the fleet digest points at data/backlog.md and never prints its body"
+}
+
 test_next_step_sources_x_mode_cadence() {
   local rec root home fakebin out
   rec=$(new_world next-step-x)
@@ -743,6 +762,7 @@ test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr
 test_composition_invokes_real_scripts
 test_fleet_digest_empty_fleet
+test_fleet_digest_does_not_print_backlog
 test_next_step_sources_x_mode_cadence
 test_next_step_afk_delegates_to_daemon
 test_supervision_block_exactly_one_and_pi_diagnostic
