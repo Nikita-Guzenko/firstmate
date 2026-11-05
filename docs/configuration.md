@@ -83,7 +83,7 @@ Before changing it, inspect the current file and rewrite or prune the matching b
 
 ## Operational learnings (data/learnings.md)
 
-Fleet-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed right after `data/captain.md` in the session-start context digest.
+Fleet-local operational facts live locally in `data/learnings.md` (a gotcha about one piece of code goes to that code instead); it is gitignored and printed right after `data/captain.md` in the session-start context digest.
 The file is created lazily on first learning and follows the same dated, evidence-backed, curated style as `data/captain.md`: inspect the current file first, then rewrite or prune stale entries instead of appending forever.
 
 ## Secondmate routes (data/secondmates.md)

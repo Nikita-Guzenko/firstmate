@@ -69,7 +69,7 @@ config/              LOCAL, gitignored knobs: crew-harness, crew-dispatch.json, 
 data/                personal fleet records; LOCAL, gitignored
   backlog.md         task queue (section 10)
   captain.md         captain's preferences and working style; LOCAL; canonical over harness memory; inspect-then-update
-  learnings.md       fleet-local operational facts and gotchas; LOCAL; dated, evidence-backed, curated, inspect-then-update; created lazily, absent until this home has a learning
+  learnings.md       fleet-local operational facts (a gotcha about one piece of code goes to that code, not here); LOCAL; dated, evidence-backed, curated, inspect-then-update; created lazily, absent until this home has a learning
   projects.md        thin project navigation registry (section 6)
   secondmates.md     secondmate routing table (section 6)
   <id>/brief.md      per-task crewmate brief, or charter brief when kind=secondmate
@@ -100,11 +100,11 @@ It composes `fm-lock.sh`, `fm-bootstrap.sh`, and `fm-wake-drain.sh` as real subp
 2. **Bootstrap** - detect-only diagnostics (tools/versions, GitHub auth, worktree-tangle, harness override, dispatch-profile validation, backlog-backend) always run and print; the four MUTATING sweeps (fleet sync, local secondmate fast-forward, secondmate liveness, X-mode artifacts) run only when this session holds the lock.
 3. **Wake queue** - when locked, drains the durable wake queue and prints it as this turn's first work queue.
 4. **Context digest** - full `data/projects.md`, `data/secondmates.md`, `data/captain.md`, and `data/learnings.md`, each delimited; a missing file prints an explicit `ABSENT` marker (absence is meaningful, never confused with empty-but-present).
-5. **Fleet-state digest** - full `data/backlog.md`; every `state/<id>.meta`; a bounded tail of each `state/<id>.status` (wake-EVENT history, not current state, with the full log path for a deeper read); the `state/.afk` flag; and one cheap alive/dead read of each task's backend endpoint.
+5. **Fleet-state digest** - every `state/<id>.meta` (the in-flight tasks); a bounded tail of each `state/<id>.status` (wake-EVENT history, not current state, with the full log path for a deeper read); the `state/.afk` flag; and one cheap alive/dead read of each task's backend endpoint. It does not print `data/backlog.md`: the work queue is the issue tracker (Linear in this fleet), and the backlog file is read on demand only.
 6. **Supervision block** - emits exactly one operating block for the detected primary harness, which owns the exact wait or wake mechanism; the script itself never starts supervision.
 
 **Everything in this digest is read exactly once.**
-Do not separately run those three scripts, and do not re-read `data/projects.md`, `data/secondmates.md`, `data/captain.md`, `data/learnings.md`, `data/backlog.md`, or any `state/*.meta` or `state/*.status` afterward - they were just printed in full.
+Do not separately run those three scripts, and do not re-read `data/projects.md`, `data/secondmates.md`, `data/captain.md`, `data/learnings.md`, or any `state/*.meta` or `state/*.status` afterward - they were just printed in full.
 Re-read a file only if the digest flagged it `ABSENT` (then rebuild or create it per this section and section 6), if it looked corrupt, or for older wake-event history in an individual status log.
 This does not block a targeted current-state read immediately before a workflow writes one of these files (such as `/stow`'s inspect-then-update pass or a backlog mutation).
 
@@ -218,8 +218,9 @@ Route each durable fact to its most specific home:
 | Kind of knowledge | Home |
 | --- | --- |
 | Captain preferences and working style | `data/captain.md` (inspect-then-update) |
-| Project-intrinsic knowledge | that project's `AGENTS.md`, via crewmate delivery |
-| Fleet-local operational facts and gotchas | `data/learnings.md` (inspect-then-update) |
+| A gotcha about one piece of code | that code, via crewmate delivery: a comment at the line (the reason and the date), a lint rule or a test - never a notes file |
+| Project-wide working rules | that project's `AGENTS.md`, via crewmate delivery |
+| Fleet-local operational facts | `data/learnings.md` (inspect-then-update) |
 | Generalizable to every firstmate user | the shared `AGENTS.md`, via PR |
 | Task-scoped notes | backlog item notes (section 10) |
 | Investigation findings | scout reports at `data/<id>/report.md` |
