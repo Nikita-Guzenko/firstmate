@@ -575,6 +575,9 @@ EOF
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$out" "BACKLOG-BODY-MARKER" "the digest printed the data/backlog.md body"
   assert_contains "$out" "data/backlog.md: not printed" "the digest did not point at the backlog"
+  assert_contains "$out" "Read data/backlog.md on demand" "the digest restricted valid on-demand backlog reads"
+  assert_contains "$out" "NOT printed: open it on demand when a task needs it." "the closing reminder restricted valid on-demand backlog reads"
+  assert_not_contains "$out" "only for a backlog mutation" "the digest still limits backlog reads to mutations"
 
   pass "the fleet digest points at data/backlog.md and never prints its body"
 }

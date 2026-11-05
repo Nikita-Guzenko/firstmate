@@ -249,7 +249,7 @@ print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 # --- 5. fleet-state digest ---------------------------------------------
 section "FLEET STATE"
 # NIK-463: the backlog body is never printed here (see the header, step 5).
-printf 'data/backlog.md: not printed. In-flight tasks are the state/*.meta below; the work queue is the issue tracker (Linear in this fleet). Read data/backlog.md only for a backlog mutation (inspect-then-update).\n'
+printf 'data/backlog.md: not printed. In-flight tasks are the state/*.meta below; the work queue is the issue tracker (Linear in this fleet). Read data/backlog.md on demand, including for /whytask, /bearings, or a backlog mutation.\n'
 
 subsection "In-flight tasks (state/*.meta)"
 META_FOUND=0
@@ -335,7 +335,7 @@ cat <<'EOF'
 The digest above is complete for this session start. Do NOT re-read
 data/projects.md, data/secondmates.md, data/captain.md, data/learnings.md,
 or state/*.meta now - they were just printed in full. data/backlog.md was
-NOT printed: open it only for a backlog mutation.
+NOT printed: open it on demand when a task needs it.
 Do NOT bulk-read state/*.status now either: their bounded tails were just
 printed with full log paths for targeted follow-up when older wake-event
 history is actually needed. Re-reading everything defeats the entire point

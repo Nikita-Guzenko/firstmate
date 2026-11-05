@@ -6,7 +6,7 @@
 # file present, and refuses to clobber distinct real files or wrong symlinks.
 # Owns the canonical "## Maintaining this file" self-governance wording for
 # project AGENTS.md files, appending it to created skeletons and promoted
-# CLAUDE.md files that lack it.
+# CLAUDE.md files that lack it, and migrating the exact legacy canonical block.
 # This is a worktree utility for crewmates, not a supervision script, so it does
 # not call fm-guard.sh.
 # Usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
@@ -44,7 +44,51 @@ When updating this file, preserve this bar for all agents and keep entries conci
 EOF
 }
 
+migrate_legacy_maintenance_section() {
+  local contents legacy replacement
+  legacy=$(cat <<'EOF'
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.
+EOF
+)
+  replacement=$(write_maintenance_section)
+  contents=$(cat "$AGENTS"; printf '\034')
+  contents=${contents%$'\034'}
+  case "$contents" in
+    *"$legacy"*)
+      contents=${contents/"$legacy"/"$replacement"}
+      printf '%s' "$contents" > "$AGENTS" || return 2
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+migrate_existing_maintenance_section() {
+  local migration_status=0
+  MAINTENANCE_MIGRATED=0
+  migrate_legacy_maintenance_section || migration_status=$?
+  if [ "$migration_status" -gt 1 ]; then
+    return "$migration_status"
+  fi
+  if [ "$migration_status" -eq 0 ]; then
+    MAINTENANCE_MIGRATED=1
+  fi
+}
+
 ensure_maintenance_section() {
+  local migration_status=0
+  migrate_legacy_maintenance_section || migration_status=$?
+  if [ "$migration_status" -eq 0 ]; then
+    return 0
+  fi
+  if [ "$migration_status" -gt 1 ]; then
+    return "$migration_status"
+  fi
   if grep -Fqx '## Maintaining this file' "$AGENTS"; then
     return 0
   fi
@@ -103,15 +147,25 @@ fi
 if [ -e "$AGENTS" ]; then
   if [ -L "$CLAUDE" ]; then
     if is_correct_claude_symlink; then
-      echo "unchanged: AGENTS.md with CLAUDE.md -> AGENTS.md in $DIR"
+      migrate_existing_maintenance_section
+      if [ "$MAINTENANCE_MIGRATED" -eq 1 ]; then
+        echo "updated: migrated AGENTS.md maintenance section in $DIR"
+      else
+        echo "unchanged: AGENTS.md with CLAUDE.md -> AGENTS.md in $DIR"
+      fi
       exit 0
     fi
     echo "conflict: CLAUDE.md is a symlink in $DIR but does not point to AGENTS.md" >&2
     exit 1
   fi
   if [ ! -e "$CLAUDE" ]; then
+    migrate_existing_maintenance_section
     ln -s "$AGENTS" "$CLAUDE"
-    echo "symlinked: CLAUDE.md -> AGENTS.md in $DIR"
+    if [ "$MAINTENANCE_MIGRATED" -eq 1 ]; then
+      echo "updated: migrated AGENTS.md maintenance section and symlinked CLAUDE.md -> AGENTS.md in $DIR"
+    else
+      echo "symlinked: CLAUDE.md -> AGENTS.md in $DIR"
+    fi
     exit 0
   fi
   if [ -f "$CLAUDE" ]; then
