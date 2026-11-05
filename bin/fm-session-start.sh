@@ -6,7 +6,7 @@
 # instead of the six-plus separate reads the old docs required: run
 # fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
 # data/captain.md, data/learnings.md, then run fm-lock.sh, fm-wake-drain.sh,
-# then read data/backlog.md, every state/*.meta, and every state/*.status.
+# then read every state/*.meta and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
